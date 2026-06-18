@@ -22,6 +22,17 @@ Quick reference for common bugs and their fixes.
 16. [Bidirectional Signal Coupling](#bidirectional-signal-coupling) ✅ FIXED
 17. [QScrollArea Not Scrolling Full Canvas](#qscrollarea-not-scrolling-full-canvas) ✅ FIXED
 
+**Web (2026)**
+18. [CSV header auto-detected at line 20](#csv-header-auto-detected-at-line-20) ✅ FIXED
+19. [Emoji prints crash on Windows console (cp1252)](#emoji-prints-crash-on-windows-console-cp1252) ✅ FIXED
+20. [Auto-color makes everything one color](#auto-color-makes-everything-one-color) ✅ FIXED
+21. [Failed uploads pollute the file list](#failed-uploads-pollute-the-file-list) ✅ FIXED
+22. [Sub-path deploy: blank page (vite base)](#sub-path-deploy-blank-page-vite-base) ✅ FIXED
+23. [Single uvicorn worker mandatory](#single-uvicorn-worker-mandatory)
+24. [nginx reload when nginx is a Windows service](#nginx-reload-when-nginx-is-a-windows-service)
+25. [Port 8099 reserved (Hyper-V/WSL)](#port-8099-reserved-hyper-vwsl)
+26. [Broken node_modules on Windows (rollup native)](#broken-node_modules-on-windows-rollup-native)
+
 ---
 
 ## European Decimal Format
@@ -575,3 +586,99 @@ if self._lock_display_size:
 - Always call `updateGeometry()` after `setFixedSize()` or `setSizePolicy()` changes
 - Test scroll behavior with window smaller than content
 - Verify all four corners accessible via scrollbars
+
+---
+
+# Web / Déploiement (2026)
+
+## CSV header auto-detected at line 20
+
+> ✅ **FIXED** (2026): heuristic in `core/data_loader.py` picked the header from line 20 for any comma CSV with >20 rows.
+
+**Cause**: `detect_csv_format()` had a branch `elif len(preview_lines) > 20 and ',' in preview_lines[20]: header_line=20`. Any normal comma CSV longer than 20 rows → header read from row 20 (data values) → empty/garbage columns, no data to select.
+
+**Solution**: removed the line-20 branch; header is always line 0 (delimiter from line 0: `;` / tab / `,`).
+
+**Prevention**: don't encode instrument-specific offsets in a generic detector; one source of truth for the header line.
+
+---
+
+## Emoji prints crash on Windows console (cp1252)
+
+> ✅ **FIXED** (2026): `print("🟢…")` raised `UnicodeEncodeError` on the Windows console (cp1252), which `upload.py` caught as a parse failure → files loaded with empty columns.
+
+**Cause**: backend uses emoji-prefixed prints; the default Windows console encoding (cp1252) can't encode them.
+
+**Solution**: set `PYTHONUTF8=1` (and `PYTHONIOENCODING=utf-8`) when launching the backend — done in `start-plotter.ps1` and the NSSM service env. WSL/utf-8 consoles are unaffected.
+
+**Prevention**: force UTF-8 for any Python process that prints non-ASCII on Windows.
+
+---
+
+## Auto-color makes everything one color
+
+> ✅ **FIXED** (2026): `seriesColorIndices` collapsed all files into one color.
+
+**Cause**: auto-color groups "same series → same color". If the detected/selected series collapses to a single group (constant/out-of-range token, or an over-eager heuristic), every file gets `palette[0]` → monochrome.
+
+**Solution** (`utils/coloring.ts`): **Auto = one distinct color per file**; tokens selected = group by tokens; **safety fallback** to per-file if grouping yields ≤1 group; the fragile heuristic was removed.
+
+**Prevention**: never let a grouping function silently map everything to index 0; guard the degenerate case.
+
+---
+
+## Failed uploads pollute the file list
+
+> ✅ **FIXED** (2026): rejected uploads (e.g. over `MAX_FILES`) returned `file_id=""` and were added to the UI.
+
+**Cause**: backend returns `FileInfo(file_id="", error=…)` on rejection; `addFiles` added them → all shared the empty-string key → single phantom style/legend → "one color, one legend".
+
+**Solution** (`store/appStore.ts`): `addFiles` drops entries with empty `file_id` and surfaces their error via `setError`.
+
+**Prevention**: at any ingest boundary, filter out failed records and show the error rather than storing them.
+
+---
+
+## Sub-path deploy: blank page (vite base)
+
+> ✅ **FIXED** (2026): served under `/plotter/` but built with `base=/` → blank page.
+
+**Cause**: a default `vite build` (`base=/`) emits `index.html` referencing `/assets/...` (absolute). Served under `/plotter/`, the browser requests `/assets/...` → 404 → blank page (only the Vite dev server hid this).
+
+**Solution**: build with the sub-path — `VITE_API_URL=/plotter/api` + `npm run build -- --base=/plotter/` → assets at `/plotter/assets/...`.
+
+**Prevention**: the build base must match the nginx location prefix; verify `dist/index.html` references `/<prefix>/assets/`.
+
+---
+
+## Single uvicorn worker mandatory
+
+**Cause**: state is in-memory per session (`SessionManager` dict + `threading.RLock` + global `HEAVY_SEM`). Multiple uvicorn workers = separate processes → sessions not shared, semaphore not global.
+
+**Rule**: run **1 worker** (no `--workers>1`), no `--reload` in prod. To scale: externalize state (Redis). ~50 LAN users are fine on 1 worker.
+
+---
+
+## nginx reload when nginx is a Windows service
+
+**Cause**: `nginx -s reload` fails with `OpenEvent("Global\ngx_reload_…") failed (5: Accès refusé)` — even from an elevated shell — because nginx runs under the service account; the reload signal can't cross sessions.
+
+**Solution**: `Restart-Service Nginx` (admin) after `nginx -t`. Brief blip for all sites; config is validated first.
+
+---
+
+## Port 8099 reserved (Hyper-V/WSL)
+
+**Cause**: binding 8099 fails with `WinError 10013 (access denied)` although nothing listens — the port falls in a Hyper-V/WSL reserved range (`netsh interface ipv4 show excludedportrange protocol=tcp`). Ranges shift after reboot.
+
+**Solution**: use **9099** (dev + prod here). To probe a free port: try-bind a `TcpListener` on loopback.
+
+---
+
+## Broken node_modules on Windows (rollup native)
+
+**Cause**: a `node_modules` installed on another OS (e.g. WSL) is missing the Windows rollup binary and `.bin` shims → `vite`/`tsc`/`eslint` "not recognized", and `Cannot find module @rollup/rollup-win32-x64-msvc`.
+
+**Solution**: clean reinstall on Windows — remove `node_modules` + `package-lock.json`, then `npm install`.
+
+**Prevention**: don't share `node_modules` across OSes; install per platform.
