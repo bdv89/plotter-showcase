@@ -1,3 +1,15 @@
+# Environnements : dev → beta → prod
+
+| Env | URL | Port / service | Dossier code | Build / lancement |
+|---|---|---|---|---|
+| **dev** | `http://localhost:5174` | Vite 5174 + backend 9099 | `…\260324\web` | `start-plotter.ps1` (Vite + reload, **dev only**) |
+| **beta** | `…/plotter-exp/` | 9199 · `CSVPlotter_Exp` | `…\260324-exp\web` | build `--base=/plotter-exp/` (§ Version expérimentale) |
+| **prod** | `…/plotter/` | 9099 · `CSVPlotter` | `…\260324\web` | build `--base=/plotter/` (§1–4) |
+
+**Flux** : développer/tester en **dev** (5174, dans `…\260324`) → propager vers **beta** (`…\260324-exp`, build `/plotter-exp/`) pour valider sans risque → promouvoir **beta → prod** via `promote-exp-to-prod.ps1` (§7). Un build ne propage jamais le source entre dossiers : voir « Mise à jour de l'exp » (Piège n°1).
+
+---
+
 # Déploiement Plotter (prod) — nginx sous-chemin `/plotter/` + backend en service NSSM
 
 Intégration dans le reverse-proxy existant (**lab services portal**, `<NGINX_DIR>`), en **sous-chemin** `/plotter/`
@@ -103,3 +115,134 @@ $env:VITE_API_URL = '/plotter/api'
 npm run build -- --base=/plotter/      # rebuild UI (nginx la sert directement, pas de reload)
 Restart-Service CSVPlotter             # admin, si le code backend a changé
 ```
+
+---
+
+# Version expérimentale (`/plotter-exp/` + backend 9199)
+
+Instance **parallèle et indépendante** de la prod, pour tester sans risque. Code dans une **copie de dossier** séparée
+(le dépôt est géré par jj ; une simple copie évite tout conflit VCS et isole totalement l'exp),
+2ᵉ service NSSM `CSVPlotter_Exp` sur **9199**, données isolées (`C:\ProgramData\Plotter_Exp`), nginx sous-chemin `/plotter-exp/`.
+La prod (`/plotter/`, 9099) n'est **jamais** touchée.
+
+```
+  Navigateur ──HTTP──> nginx :80
+       /plotter/         ─> 127.0.0.1:9099  (CSVPlotter,     code ...\260324)       ← PROD, inchangée
+       /plotter-exp/     ─> 127.0.0.1:9199  (CSVPlotter_Exp, code ...\260324-exp)   ← EXPÉRIMENTAL
+```
+
+### 1. Copie du code (indépendante de la prod)
+On copie **web/** sans les artefacts lourds/régénérables (`venv_win`, `node_modules`, `dist`, caches) :
+```powershell
+$src = '<INSTALL_DIR>\260324\web'
+$dst = '<INSTALL_DIR>\260324-exp\web'
+robocopy $src $dst /MIR /R:1 /W:1 /XJ /XD venv venv_win node_modules dist __pycache__ uploads logs .git .jj /XF *.log
+# → ...\260324-exp\web contient le code, à recréer ses dépendances ci-dessous
+```
+
+### 2. Dépendances de la copie (venv + npm, une seule fois)
+```powershell
+cd <INSTALL_DIR>\260324-exp\web\backend
+python -m venv venv_win
+.\venv_win\Scripts\Activate.ps1; pip install -r requirements.txt; deactivate
+cd ..\frontend
+npm install
+```
+
+### 3. Build frontend pour `/plotter-exp/`
+```powershell
+cd ..\260324-exp\web\frontend
+$env:VITE_API_URL = '/plotter-exp/api'
+npm run build -- --base=/plotter-exp/        # → dist\index.html doit référencer /plotter-exp/assets/…
+```
+
+### 4. Service backend 9199 (NSSM, admin) — réutilise install-service.ps1 avec d'autres paramètres
+```powershell
+cd ..\260324-exp\web\deploy        # ⚠️ lancer depuis le deploy DE LA COPIE (résout son venv_win)
+powershell -ExecutionPolicy Bypass -File .\install-service.ps1 `
+  -ServiceName CSVPlotter_Exp -Port 9199 -DataDir C:\ProgramData\Plotter_Exp
+nssm status CSVPlotter_Exp                    # SERVICE_RUNNING
+curl http://127.0.0.1:9199/api/health         # { "status": "ok", ... }
+```
+Désinstaller : `nssm stop CSVPlotter_Exp; nssm remove CSVPlotter_Exp confirm`
+
+### 5. Route nginx
+Ajoute le bloc de `web\deploy\services-plotter-exp.conf` dans `<NGINX_DIR>\conf\services.conf`, puis :
+```powershell
+<NGINX_DIR>\nginx.exe -t -p <NGINX_DIR>       # valide
+Restart-Service Nginx                    # admin
+```
+→ accessible sur `http://<serveur>/plotter-exp/`.
+
+### 6. Dashboard lab services — deux cartes (prod + beta)
+La prod et la beta coexistent sur **deux URLs** (`/plotter/` et `/plotter-exp/`) ; ce **n'est pas** un
+« mode exp » (bascule d'upstream comme InventoryServer). On les expose donc comme **deux entrées
+distinctes** dans `…\services.yaml` (la prod a déjà la sienne ; ajoute la beta) :
+```yaml
+  - name: CSV Plotter
+    slug: plotter
+    prod_port: 9099
+    health_path: /api/health
+    task_name: CSVPlotter
+    nginx_upstream: plotter
+    url: /plotter/                  # bouton « Ouvrir » sur la carte
+
+  - name: CSV Plotter (Beta)
+    slug: plotter-exp
+    prod_port: 9199
+    health_path: /api/health
+    task_name: CSVPlotter_Exp
+    nginx_upstream: plotter-exp
+    url: /plotter-exp/
+```
+Puis `Restart-Service Dashboard` (admin) → deux cartes, chacune avec santé, bouton **Relancer**
+(→ son service NSSM) et lien **Ouvrir**. Le champ `url` est facultatif (ajouté au modèle dashboard) :
+absent = pas de bouton Ouvrir.
+
+### 7. Promotion beta → prod (une seule commande)
+Une fois la beta validée sur `/plotter-exp/`, pousse son code vers la prod :
+```powershell
+cd web\deploy
+powershell -ExecutionPolicy Bypass -File .\promote-exp-to-prod.ps1   # admin ; -Force pour sauter la confirmation
+```
+Le script : (1) `robocopy …\260324-exp\web → …\260324\web` (hors `venv_win/node_modules/dist/__pycache__/uploads/logs`),
+(2) rebuild frontend prod `--base=/plotter/`, (3) `Restart-Service CSVPlotter` + health check.
+Données prod (`C:\ProgramData\Plotter`) et beta (9199, `C:\ProgramData\Plotter_Exp`) **non touchées**.
+Ensuite **Ctrl+Shift+R** sur `/plotter/`.
+
+### Mise à jour de l'exp
+
+> ⚠️ **Piège n°1** : on développe dans `…\260324`, mais `/plotter-exp/` sert le `dist/` **compilé de la copie `…\260324-exp`**.
+> Éditer `…\260324` puis rebuilder n'a **aucun effet** tant que le code n'a pas été **propagé** vers `…\260324-exp`.
+> Toujours faire : **(1) propager → (2) rebuild/redémarrer → (3) hard-refresh**.
+
+**Raccourci (recommandé)** — le script `promote-dev-to-beta.ps1` enchaîne propagation + rebuild + restart + health check :
+```powershell
+cd web\deploy
+powershell -ExecutionPolicy Bypass -File .\promote-dev-to-beta.ps1   # admin ; -Force pour sauter la confirmation
+```
+Puis **Ctrl+Shift+R** sur `/plotter-exp/`. Les étapes manuelles ci-dessous restent valables si tu veux propager/builder à la main.
+
+**1. Propager le code dev → copie exp** (même robocopy qu'à l'install, exclut les artefacts régénérables) :
+```powershell
+$src = '<INSTALL_DIR>\260324\web'
+$dst = '<INSTALL_DIR>\260324-exp\web'
+robocopy $src $dst /MIR /R:1 /W:1 /XJ /XD venv venv_win node_modules dist __pycache__ uploads logs .git .jj /XF *.log
+```
+
+**2a. Changement frontend** (`.tsx`, `.css`, store…) — rebuild du `dist/`, **pas** de redémarrage de service :
+```powershell
+cd <INSTALL_DIR>\260324-exp\web\frontend
+$env:VITE_API_URL = '/plotter-exp/api'; npm run build -- --base=/plotter-exp/
+```
+
+**2b. Changement backend** (`.py`) — redémarrer le service (admin) ; nginx sert l'API via proxy, aucun rebuild UI :
+```powershell
+Restart-Service CSVPlotter_Exp -Force        # PowerShell admin requis
+```
+
+**3. Hard-refresh navigateur** sur `http://<serveur>/plotter-exp/` → **Ctrl+Shift+R** (les anciens assets JS sont en cache ; un F5 simple ne suffit pas).
+
+> ⚠️ **Piège n°2** (nom de service) : le service exp s'appelle **`CSVPlotter_Exp`**, pas `CSVPlotter`.
+> `Restart-Service CSVPlotter` → *NoServiceFoundForGivenName*. Le bouton du services dashboard doit pointer sur
+> `exp_task_name: CSVPlotter_Exp` (cf. §6) ; sinon son redémarrage échoue avec cette même erreur.

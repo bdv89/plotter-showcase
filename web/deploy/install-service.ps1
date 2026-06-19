@@ -1,4 +1,4 @@
-# install-service.ps1 — Installe le backend Plotter en service Windows via NSSM.
+﻿# install-service.ps1 — Installe le backend Plotter en service Windows via NSSM.
 # À LANCER EN ADMINISTRATEUR.
 #
 #   powershell -ExecutionPolicy Bypass -File .\install-service.ps1
@@ -46,9 +46,12 @@ if (-not (Get-Command $NssmPath -ErrorAction SilentlyContinue)) {
 
 New-Item -ItemType Directory -Force -Path $logDir, $uploadDir, $sessionDir | Out-Null
 
-# --- (Ré)installation propre ---
-& $NssmPath stop   $ServiceName 2>$null
-& $NssmPath remove $ServiceName confirm 2>$null
+# --- (Ré)installation propre --- (tolérant si le service n'existe pas encore : PS 5.1 + EAP=Stop
+#     promeut le stderr de nssm en erreur fatale → on neutralise EAP le temps de ces 2 appels)
+$ErrorActionPreference = 'SilentlyContinue'
+& $NssmPath stop   $ServiceName 2>&1 | Out-Null
+& $NssmPath remove $ServiceName confirm 2>&1 | Out-Null
+$ErrorActionPreference = 'Stop'
 
 Write-Host "Installation du service '$ServiceName'…" -ForegroundColor Cyan
 # 1 worker (défaut), PAS de --reload, bind localhost (nginx fait le front).

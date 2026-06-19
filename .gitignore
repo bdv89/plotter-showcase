@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+venv_win/
 
 # Data files (user pools, not code)
 *.dpool
@@ -32,3 +33,8 @@ logs/
 # Samples/standards (data, not code)
 samples/
 standards/
+
+# Web frontend build artifacts
+web/frontend/node_modules/
+web/frontend/dist/
+*.tsbuildinfo

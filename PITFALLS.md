@@ -32,6 +32,11 @@ Quick reference for common bugs and their fixes.
 24. [nginx reload when nginx is a Windows service](#nginx-reload-when-nginx-is-a-windows-service)
 25. [Port 8099 reserved (Hyper-V/WSL)](#port-8099-reserved-hyper-vwsl)
 26. [Broken node_modules on Windows (rollup native)](#broken-node_modules-on-windows-rollup-native)
+27. [Processing crashes on all-NaN / short columns](#processing-crashes-on-all-nan--short-columns) ✅ FIXED
+28. [Auto-plot doesn't fire on the first plot](#auto-plot-doesnt-fire-on-the-first-plot) ✅ FIXED
+29. [Promotion robocopy hangs / copies 374 MB (venv not excluded)](#promotion-robocopy-hangs--copies-374-mb-venv-not-excluded) ✅ FIXED
+30. [Fixed Y min ignored → axis autoscales to -1](#fixed-y-min-ignored--axis-autoscales-to--1) ✅ FIXED
+31. [Copy Data: navigator.clipboard undefined on HTTP/LAN](#copy-data-navigatorclipboard-undefined-on-httplan) ✅ FIXED
 
 ---
 
@@ -682,3 +687,91 @@ if self._lock_display_size:
 **Solution**: clean reinstall on Windows — remove `node_modules` + `package-lock.json`, then `npm install`.
 
 **Prevention**: don't share `node_modules` across OSes; install per platform.
+
+---
+
+## Processing crashes on all-NaN / short columns
+
+> ✅ **FIXED** (2026): denoise + baseline crashed on every real tribology file (0/253 processed).
+
+**Cause**: real files carry a numeric column that is entirely NaN (e.g. `METADATA`, dtype float64). The processors iterate numeric columns without skipping it → `denoise` raises `ValueError: Input data contains only NaN values`, `baseline` raises `array of sample points is empty`. Separately, files shorter than the Savitzky-Golay window (e.g. 11) raise `window_length must be ≤ size of x`.
+
+**Solution**:
+- `core/denoise_methods.py` (DataFrame loop): skip all-NaN columns; `try/except ValueError` per column → leave it unchanged (covers the short-window case too).
+- `core/../api/process.py` `_baseline()`: skip all-NaN columns + `try/except` per column.
+- (`_smooth`/`_normalize`/`_remove_outliers` were already safe: NaN std/min/max guards.)
+
+**Symptom**: enabling denoise or baseline returns 500 on these files; nothing processes.
+
+**Prevention**: any per-column processor must skip columns with no finite data and degrade per-column instead of aborting the whole file. Test processing on a real multi-column export (with a metadata/empty column), not just clean synthetic data.
+
+---
+
+## Auto-plot doesn't fire on the first plot
+
+> ✅ **FIXED** (2026): the first auto-plot got swallowed; user had to click **Plot** once before auto-plot started working.
+
+**Cause** (`components/ColumnSelector.tsx`): the auto-plot `useEffect` had `handlePlot` in its dependency array, and set `lastRequestRef.current = fingerprint` *before* the 300 ms `setTimeout` fired. `handlePlot` is a `useCallback` that depends on `fileStyles`/`processing`, so its identity churns; React StrictMode also double-mounts effects in dev. Either one re-runs the effect → cleanup clears the pending timer → the re-run sees a matching fingerprint → early `return` without rescheduling → **the plot never fires**.
+
+**Symptom**: after upload + checking files + selecting X/Y, no curves appear; clicking **Plot** manually once "unlocks" auto-plot for subsequent changes.
+
+**Solution**: read `handlePlot` through a ref (so its churn no longer re-runs the effect) and set `lastRequestRef` *inside* the timer callback (so a cancelled timer always reschedules):
+```ts
+const handlePlotRef = useRef(handlePlot);
+handlePlotRef.current = handlePlot;
+useEffect(() => {
+  if (!autoPlot || !canPlot) return;
+  const fingerprint = JSON.stringify([checkedFilesArr, xColumn, yColumns, y2Columns]);
+  if (fingerprint === lastRequestRef.current) return;
+  const timer = setTimeout(() => {
+    lastRequestRef.current = fingerprint;   // set only when it actually runs
+    handlePlotRef.current();
+  }, 300);
+  return () => clearTimeout(timer);
+}, [autoPlot, canPlot, checkedFilesArr, xColumn, yColumns, y2Columns]);  // no handlePlot
+```
+
+**Prevention**: in a debounced-effect pattern, don't put the churning callback in the deps (use a ref), and commit the dedup key only after the action runs — never before a cancellable timer.
+
+---
+
+## Promotion robocopy hangs / copies 374 MB (venv not excluded)
+
+> ✅ **FIXED** (2026): `promote-dev-to-beta.ps1` / `promote-exp-to-prod.ps1` (and the DEPLOY.md robocopy snippets) excluded `venv_win` but **not** `venv`.
+
+**Cause**: the backend has two Python environments — `backend\venv_win` (Windows) **and** `backend\venv` (WSL/Linux). The robocopy `/XD` list only excluded `venv_win`, so every promotion mirrored the ~374 MB WSL venv (6000+ files). One of its dirs failed to copy, and with robocopy's **default retries `/R:1000000 /W:30`** that single failure retried near-forever → the script appeared **frozen** at "[1/3] Copie…".
+
+**Symptom**: promotion stuck at the copy step (silent because output went to `Out-Null`); a `/L /R:0` dry-run showed 374 MB + 1 failed dir.
+
+**Solution** (`web\deploy\promote-*.ps1` + DEPLOY.md): add `venv` (and `.git`/`.jj`/`/XJ`) to `/XD`, add `/R:1 /W:1` so a locked file fails fast instead of hanging, and drop `Out-Null` so progress is visible:
+```powershell
+robocopy $src $dst /MIR /R:1 /W:1 /NP /XJ `
+  /XD venv venv_win node_modules dist __pycache__ uploads logs .git .jj /XF *.log
+```
+Dry-run after fix: 64 files / 533 KB, 0 failures.
+
+**Prevention**: for any mirror/copy, exclude **all** regenerable heavy dirs (both venvs!) and always cap robocopy retries (`/R` /`/W`) — the defaults turn one locked file into an infinite hang. Validate with a `/L` dry-run first.
+
+---
+
+## Fixed Y min ignored → axis autoscales to -1
+
+> ✅ **FIXED** (2026): a manual axis range was applied only when **both** min and max were set; one bound alone was silently dropped.
+
+**Cause** (`components/PlotView.tsx`): `range: y_min != null && y_max != null ? [y_min, y_max] : undefined`. Unchecking *Auto scale* and setting only **Y min = 0** (Max blank) left `range` undefined → Plotly autoranged with ~5% padding below the data → the axis bottom landed at ≈ **-1** despite "min = 0", and Plotly's default **zeroline** (drawn at y=0) then sat slightly above the frame. The white-bg/black-box publication preset made both newly visible (they blended into the old dark theme).
+
+**Solution**: `axisRange()` helper fills the open side from the actual data extent (+3% pad) when only one bound is set; both unset → autorange; log axes keep the both-or-nothing rule. Also set `zeroline: false` on all axes (cleaner for a boxed publication plot, removes the stray 0 line). Layout `useMemo` now depends on `traces` since the range reads data.
+
+**Prevention**: when mapping optional user bounds to a library that needs a complete range, fall back to data extents per side instead of discarding partial input; don't require all-or-nothing.
+
+---
+
+## Copy Data: navigator.clipboard undefined on HTTP/LAN
+
+> ✅ **FIXED** (2026): `Copy Data` crashait `can't access property "writeText", navigator.clipboard is undefined` quand le plotter était ouvert via une IP LAN en HTTP (Firefox, toutes plateformes).
+
+**Cause** (`App.tsx`, `handleCopyData`): `navigator.clipboard` n'est exposé par les navigateurs **que dans un contexte sécurisé** (HTTPS ou `localhost`). En dev `localhost:5174` ça marche, mais dès qu'on ouvre l'URL via une IP LAN (`http://192.168.x.x:5174/…`), Firefox laisse `navigator.clipboard` à `undefined` → `navigator.clipboard.writeText(...)` lève.
+
+**Solution**: helper `copyToClipboard()` qui tente `navigator.clipboard.writeText` quand il existe, sinon retombe sur l'ancien `document.execCommand('copy')` via un `<textarea>` temporaire (qui fonctionne en HTTP). `handleCopyData` route désormais par ce helper.
+
+**Prevention**: ne jamais supposer `navigator.clipboard` disponible — c'est une API à contexte sécurisé. Tester `navigator.clipboard?.writeText` avant usage et garder le fallback `execCommand` pour l'accès LAN/HTTP. (Pour supprimer le besoin du fallback : servir le LAN en HTTPS.)
