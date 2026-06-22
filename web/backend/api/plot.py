@@ -1,10 +1,9 @@
 """Plot data endpoints - returns trace data for Plotly.js."""
 
 from fastapi import APIRouter, Depends
-
-from state import AppState
+from models.schemas import PlotDataResponse, PlotRequest, PlotTrace
 from sessions import get_session
-from models.schemas import PlotRequest, PlotDataResponse, PlotTrace
+from state import AppState
 
 router = APIRouter()
 

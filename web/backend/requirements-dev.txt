@@ -1,0 +1,5 @@
+# Dev/test deps (not needed to run the server). Install into the backend venv:
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8
+ruff>=0.6
+black>=24

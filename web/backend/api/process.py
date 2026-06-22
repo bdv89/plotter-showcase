@@ -1,11 +1,10 @@
 """Processing endpoints - apply data pipeline to files."""
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Depends
-
-from state import AppState
-from sessions import get_session, HEAVY_SEM
+from fastapi import APIRouter, Depends, HTTPException
 from models.schemas import ProcessRequest
+from sessions import HEAVY_SEM, get_session
+from state import AppState
 
 router = APIRouter()
 

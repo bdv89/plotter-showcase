@@ -1,7 +1,8 @@
 """Pydantic models for the CSV Plotter web API."""
 
-from pydantic import BaseModel, Field
 from typing import Optional
+
+from pydantic import BaseModel
 
 
 class FileInfo(BaseModel):

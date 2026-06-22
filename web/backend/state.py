@@ -20,7 +20,6 @@ class AppState:
         self.x_column = ""
         self.y_columns = []
         self.y2_columns = []
-        self.pipeline = None  # DataPipeline instance
         self.processed_cache = OrderedDict()  # file_id -> processed DataFrame (LRU, max 50)
 
     def cache_put(self, key, value):

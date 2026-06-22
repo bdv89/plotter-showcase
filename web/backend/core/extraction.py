@@ -5,8 +5,8 @@ Pure functions for computing statistical metrics from data columns.
 """
 
 import traceback
+
 import numpy as np
-import pandas as pd
 
 
 def compute_linear_slope(y_series, x_series):
@@ -193,7 +193,7 @@ def compute_extraction(df, column, operation, x_column=None, x_value=None,
                 print(f"❌ X column '{x_column}' not found")
                 return None
             if x_value is None:
-                print(f"❌ X value not provided")
+                print("❌ X value not provided")
                 return None
             x_series = df[x_column].dropna()
             min_len = min(len(series), len(x_series))
@@ -206,7 +206,7 @@ def compute_extraction(df, column, operation, x_column=None, x_value=None,
                 print(f"❌ Condition column '{condition_column}' not found")
                 return None
             if threshold is None:
-                print(f"❌ Threshold not provided")
+                print("❌ Threshold not provided")
                 return None
             if not operator:
                 operator = '>' if '>' in operation else '<'

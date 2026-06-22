@@ -3,8 +3,9 @@ Time-window averaging processor for oscillation data reduction.
 Extracted from tribolab_method.py - preserves performance optimizations.
 """
 
+from typing import Dict, List
+
 import pandas as pd
-from typing import List, Dict
 
 # Polars for high-performance data operations (preferred)
 try:

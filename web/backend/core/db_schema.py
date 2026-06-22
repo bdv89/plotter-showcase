@@ -9,9 +9,10 @@ This module provides:
 Design: POC approach - simple standalone functions, relational schema
 """
 
-import sqlite3
-import json
 import io
+import json
+import sqlite3
+
 import pandas as pd
 
 
@@ -144,7 +145,7 @@ def convert_dpool_to_db(data_pool, db_path):
 
             filename = file_data.get('filename')
             if not filename:
-                print(f"⚠️ Skipping entry without filename")
+                print("⚠️ Skipping entry without filename")
                 continue
 
             # 1. INSERT into files table
@@ -240,7 +241,7 @@ def convert_dpool_to_db(data_pool, db_path):
                 data_pool.get('metadata', {}).get('version', '1.0.0'),
                 data_pool.get('metadata', {}).get('timestamp')
             ))
-            print(f"🔵 Saved pool settings")
+            print("🔵 Saved pool settings")
         except Exception as e:
             print(f"⚠️ Failed to save pool settings: {e}")
 
@@ -458,7 +459,7 @@ def load_from_sqlite(db_path):
                 'version': settings_row['version'],
                 'timestamp': settings_row['timestamp']
             }
-            print(f"✅ Loaded pool settings")
+            print("✅ Loaded pool settings")
 
         # Load fit_results
         cursor.execute("""

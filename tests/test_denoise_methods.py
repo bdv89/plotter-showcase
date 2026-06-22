@@ -10,20 +10,13 @@ Run with: python -m pytest tests/test_denoise_methods.py -v
 import numpy as np
 import pandas as pd
 import pytest
-import sys
-import os
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from denoise_methods import (
-    savitzky_golay_denoise,
-    median_filter_denoise,
-    wavelet_denoise,
+from core.denoise_methods import (
+    denoise,
     fft_lowpass_denoise,
-    denoise
+    median_filter_denoise,
+    savitzky_golay_denoise,
+    wavelet_denoise,
 )
-
 
 # =============================================================================
 # FIXTURES
@@ -200,10 +193,7 @@ class TestMedianFilter:
 class TestWaveletDenoise:
     def test_basic_denoising(self, clean_signal, noisy_signal):
         """Test basic wavelet denoising."""
-        try:
-            import pywt
-        except ImportError:
-            pytest.skip("PyWavelets not installed")
+        pytest.importorskip("pywt")
 
         denoised = wavelet_denoise(noisy_signal, wavelet='db4', mode='soft')
 
@@ -217,10 +207,7 @@ class TestWaveletDenoise:
 
     def test_soft_vs_hard_thresholding(self, noisy_signal):
         """Test difference between soft and hard thresholding."""
-        try:
-            import pywt
-        except ImportError:
-            pytest.skip("PyWavelets not installed")
+        pytest.importorskip("pywt")
 
         soft_denoised = wavelet_denoise(noisy_signal, mode='soft')
         hard_denoised = wavelet_denoise(noisy_signal, mode='hard')
@@ -233,10 +220,7 @@ class TestWaveletDenoise:
 
     def test_different_wavelets(self, noisy_signal):
         """Test different wavelet types."""
-        try:
-            import pywt
-        except ImportError:
-            pytest.skip("PyWavelets not installed")
+        pytest.importorskip("pywt")
 
         wavelets = ['db4', 'sym8', 'coif5']
         results = []
@@ -251,30 +235,21 @@ class TestWaveletDenoise:
 
     def test_invalid_wavelet(self, noisy_signal):
         """Test invalid wavelet name."""
-        try:
-            import pywt
-        except ImportError:
-            pytest.skip("PyWavelets not installed")
+        pytest.importorskip("pywt")
 
         with pytest.raises(ValueError):
             wavelet_denoise(noisy_signal, wavelet='invalid_wavelet')
 
     def test_invalid_mode(self, noisy_signal):
         """Test invalid thresholding mode."""
-        try:
-            import pywt
-        except ImportError:
-            pytest.skip("PyWavelets not installed")
+        pytest.importorskip("pywt")
 
         with pytest.raises(ValueError):
             wavelet_denoise(noisy_signal, mode='invalid_mode')
 
     def test_handles_nan(self, signal_with_nan):
         """Test NaN handling."""
-        try:
-            import pywt
-        except ImportError:
-            pytest.skip("PyWavelets not installed")
+        pytest.importorskip("pywt")
 
         denoised = wavelet_denoise(signal_with_nan, wavelet='db4')
 
@@ -359,10 +334,7 @@ class TestDenoiseDispatcher:
 
     def test_wavelet_method(self, noisy_signal):
         """Test dispatcher with wavelet."""
-        try:
-            import pywt
-        except ImportError:
-            pytest.skip("PyWavelets not installed")
+        pytest.importorskip("pywt")
 
         denoised = denoise(noisy_signal, method='wavelet', wavelet='db4')
         assert len(denoised) == len(noisy_signal)
@@ -400,7 +372,9 @@ class TestDenoiseDispatcher:
 
         # Non-numeric column should be unchanged
         assert df_denoised['label'].equals(df['label'])
-        assert df_denoised['x'].equals(df['x'])  # x unchanged (integers)
+        # denoise() applies to ALL numeric columns (it has no notion of an x-axis),
+        # so the integer 'x' column is filtered too — its monotonic tail changes.
+        assert not df_denoised['x'].equals(df['x'])
 
     def test_series_preservation(self, noisy_signal):
         """Test that Series is returned when input is Series."""

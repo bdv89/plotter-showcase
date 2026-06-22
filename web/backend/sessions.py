@@ -8,21 +8,24 @@ so the app keeps working before the frontend starts sending the header.
 """
 
 import os
-import time
 import shutil
 import threading
-from uuid import uuid4
+import time
 from collections import OrderedDict
+from uuid import uuid4
 
 import pandas as pd
-from fastapi import Header
-
-from state import AppState
 from config import (
-    SESSIONS_DIR, UPLOAD_DIR,
-    MAX_SESSIONS_IN_MEMORY, SESSION_TTL, HEAVY_CONCURRENCY, SESSION_RETENTION_DAYS,
+    HEAVY_CONCURRENCY,
+    MAX_SESSIONS_IN_MEMORY,
+    SESSION_RETENTION_DAYS,
+    SESSION_TTL,
+    SESSIONS_DIR,
+    UPLOAD_DIR,
 )
-from core.db_schema import save_to_sqlite, load_from_sqlite
+from core.db_schema import load_from_sqlite, save_to_sqlite
+from fastapi import Header
+from state import AppState
 
 # Cap concurrent heavy CPU jobs (process/extract) so N users can't thrash the box.
 HEAVY_SEM = threading.BoundedSemaphore(HEAVY_CONCURRENCY)

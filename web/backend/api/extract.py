@@ -1,11 +1,10 @@
 """Extraction endpoints - compute statistical metrics from data."""
 
-from fastapi import APIRouter, HTTPException, Depends
-
-from state import AppState
-from sessions import get_session
+from core.extraction import OPERATIONS, compute_extraction
+from fastapi import APIRouter, Depends, HTTPException
 from models.schemas import ExtractRequest
-from core.extraction import compute_extraction, OPERATIONS
+from sessions import get_session
+from state import AppState
 
 router = APIRouter()
 

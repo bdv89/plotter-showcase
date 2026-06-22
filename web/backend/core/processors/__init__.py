@@ -2,11 +2,11 @@
 Processing module - Data transformation processors.
 """
 
-from .denoise import create_denoise_processor
-from .smooth import create_smooth_processor
-from .outliers import create_outliers_processor
-from .normalize import create_normalize_processor
 from .baseline import create_baseline_processor
+from .denoise import create_denoise_processor
+from .normalize import create_normalize_processor
+from .outliers import create_outliers_processor
+from .smooth import create_smooth_processor
 from .time_averaging import create_time_averaging_processor
 
 __all__ = [

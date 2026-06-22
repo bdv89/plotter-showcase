@@ -1,0 +1,23 @@
+# Tooling config for the CSV Plotter web app (backend lint/format + tests).
+# POC project — keep this lean. Frontend has its own ESLint config.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+# Backend lives under web/backend; tests under tests/.
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Sensible defaults: pyflakes (F) + pycodestyle (E) + isort (I).
+select = ["E", "F", "I"]
+ignore = [
+    "E501",  # line length handled by formatter, not enforced hard
+    "E731",  # assigning small lambdas is fine and readable here
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]

@@ -2,18 +2,18 @@
 
 import os
 import shutil
-from fastapi import FastAPI, Depends
+
+from api.extract import router as extract_router
+from api.plot import router as plot_router
+from api.pool import router as pool_router
+from api.process import router as process_router
+from api.upload import router as upload_router
+from config import FRONTEND_DIST, SESSIONS_DIR, SHARE_PATH, UPLOAD_DIR
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
-from config import UPLOAD_DIR, SHARE_PATH, SESSIONS_DIR, FRONTEND_DIST
+from sessions import cleanup_expired, get_session, manager, session_db_path
 from state import AppState
-from sessions import get_session, manager, session_db_path, cleanup_expired
-from api.upload import router as upload_router
-from api.plot import router as plot_router
-from api.process import router as process_router
-from api.extract import router as extract_router
-from api.pool import router as pool_router
 
 app = FastAPI(title="CSV Plotter API", version="0.2.0")
 

@@ -13,11 +13,12 @@ Performance optimizations:
 - Convergence criteria to avoid unnecessary iterations
 """
 
+from functools import lru_cache
+
 import numpy as np
 from scipy.signal import find_peaks
-from scipy.sparse import diags, csr_matrix
+from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
-from functools import lru_cache
 
 
 @lru_cache(maxsize=32)

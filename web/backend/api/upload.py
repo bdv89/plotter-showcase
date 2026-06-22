@@ -2,13 +2,13 @@
 
 import os
 from uuid import uuid4
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends
 
 from config import MAX_FILES
-from state import AppState
-from sessions import get_session, manager, session_upload_dir
-from models.schemas import FileInfo
 from core.data_loader import load_file
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from models.schemas import FileInfo
+from sessions import get_session, manager, session_upload_dir
+from state import AppState
 
 router = APIRouter()
 

@@ -5,10 +5,11 @@ Signal denoising methods for electrochemical and scientific data.
 Provides multiple filtering approaches for noise reduction while preserving signal features.
 """
 
+from typing import Literal, Optional, Union
+
 import numpy as np
 import pandas as pd
 from scipy import signal
-from typing import Union, Optional, Literal
 
 
 def _validate_data(data: Union[np.ndarray, pd.Series]) -> np.ndarray:
