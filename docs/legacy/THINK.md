@@ -1,3 +1,6 @@
+> ⚠️ **Doc legacy (desktop PyQt5 archivé)** — décrit une conception jamais portée
+> sur la web app. Voir [README.md](README.md). Code : tag `legacy-desktop-2026-06-21`.
+
 # THINK.md - Réflexion Architecture Multi-Plot
 
 ## Contexte Initial

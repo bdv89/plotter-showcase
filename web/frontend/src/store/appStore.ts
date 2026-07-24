@@ -175,7 +175,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
           line_color: COLOR_PALETTE[colorIdx],
           line_color_y2: COLOR_PALETTE[colorIdx],
           line_style: 'solid',
-          legend_label: '',
+          // Rempli depuis le nom de fichier (comme restorePool) → légende visible
+          // dès l'upload, cohérent avec le rechargement de page. Clear la vide.
+          legend_label: f.filename.replace(/\.[^.]+$/, ''),
         };
       }
     });

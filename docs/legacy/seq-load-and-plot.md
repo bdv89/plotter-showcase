@@ -1,3 +1,6 @@
+> ⚠️ **Doc legacy (desktop PyQt5 archivé)** — modules retirés de l'arbre. Voir
+> [README.md](README.md). Code : tag `legacy-desktop-2026-06-21`.
+
 ```mermaid
 %% Mermaid sequence: Use case principal "Charger → Traiter → Tracer"
 sequenceDiagram

@@ -104,3 +104,24 @@ export interface ExtractionResult {
   value: number | null;
   precision: number;
 }
+
+// Connection-tracking metrics (onglet Metrics)
+export interface MetricsSummary {
+  total_requests: number;
+  unique_ips_total: number;
+  unique_ips_today: number;
+  first_date: string | null;
+  last_date: string | null;
+}
+
+export interface MetricsDailyRow {
+  date: string;
+  requests: number;
+  unique_ips: number;
+}
+
+export interface MetricsEndpointRow {
+  endpoint: string;
+  total: number;
+  last_activity: string | null;
+}

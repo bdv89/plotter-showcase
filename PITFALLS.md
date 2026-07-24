@@ -27,7 +27,7 @@ Quick reference for common bugs and their fixes.
 19. [Emoji prints crash on Windows console (cp1252)](#emoji-prints-crash-on-windows-console-cp1252) ✅ FIXED
 20. [Auto-color makes everything one color](#auto-color-makes-everything-one-color) ✅ FIXED
 21. [Failed uploads pollute the file list](#failed-uploads-pollute-the-file-list) ✅ FIXED
-22. [Sub-path deploy: blank page (vite base)](#sub-path-deploy-blank-page-vite-base) ✅ FIXED
+22. [Sub-path deploy: blank page (vite base)](#sub-path-deploy-blank-page-vite-base) ⚠️ RÉCURRENT
 23. [Single uvicorn worker mandatory](#single-uvicorn-worker-mandatory)
 24. [nginx reload when nginx is a Windows service](#nginx-reload-when-nginx-is-a-windows-service)
 25. [Port 8099 reserved (Hyper-V/WSL)](#port-8099-reserved-hyper-vwsl)
@@ -37,6 +37,7 @@ Quick reference for common bugs and their fixes.
 29. [Promotion robocopy hangs / copies 374 MB (venv not excluded)](#promotion-robocopy-hangs--copies-374-mb-venv-not-excluded) ✅ FIXED
 30. [Fixed Y min ignored → axis autoscales to -1](#fixed-y-min-ignored--axis-autoscales-to--1) ✅ FIXED
 31. [Copy Data: navigator.clipboard undefined on HTTP/LAN](#copy-data-navigatorclipboard-undefined-on-httplan) ✅ FIXED
+32. [Old .db pool loads with no legend](#old-db-pool-loads-with-no-legend) ⚠️ PAR DESIGN
 
 ---
 
@@ -646,7 +647,7 @@ if self._lock_display_size:
 
 ## Sub-path deploy: blank page (vite base)
 
-> ✅ **FIXED** (2026): served under `/plotter/` but built with `base=/` → blank page.
+> ⚠️ **RÉCURRENT** : resurgit à **chaque** build qui oublie le flag `--base` (revu en 2026-06 : le `dist/` prod avait été buildé en `base=/`). Pas un bug « réglé une fois » — c'est une étape de build à ne jamais oublier.
 
 **Cause**: a default `vite build` (`base=/`) emits `index.html` referencing `/assets/...` (absolute). Served under `/plotter/`, the browser requests `/assets/...` → 404 → blank page (only the Vite dev server hid this).
 
@@ -775,3 +776,19 @@ Dry-run after fix: 64 files / 533 KB, 0 failures.
 **Solution**: helper `copyToClipboard()` qui tente `navigator.clipboard.writeText` quand il existe, sinon retombe sur l'ancien `document.execCommand('copy')` via un `<textarea>` temporaire (qui fonctionne en HTTP). `handleCopyData` route désormais par ce helper.
 
 **Prevention**: ne jamais supposer `navigator.clipboard` disponible — c'est une API à contexte sécurisé. Tester `navigator.clipboard?.writeText` avant usage et garder le fallback `execCommand` pour l'accès LAN/HTTP. (Pour supprimer le besoin du fallback : servir le LAN en HTTPS.)
+
+---
+
+## Old .db pool loads with no legend
+
+> ⚠️ **PAR DESIGN** (2026) : un pool `.db` **sauvegardé avant** le fix « légende visible par défaut » recharge sans légende. Ce n'est pas une régression du fix — c'est le pool qui porte l'ancienne valeur.
+
+**Cause** (`store/appStore.ts`, `restorePool`) : le remplissage du `legend_label` depuis le nom de fichier ne se fait **que si l'objet style est absent** (`data.styles[fileId] || { …, legend_label: filename }`). Un pool sauvegardé avant le fix a persisté des styles **avec** `legend_label: ''` (l'ancien défaut vide) → l'objet style existe → `restorePool` respecte le label vide → aucune trace n'a `showlegend` → **pas de légende**. À distinguer de la réhydratation au reload, qui elle passe par `/api/session` renvoyant `styles: {}` (objet absent) → labels remplis → légende OK.
+
+**Symptom** : `Load` d'un vieux `.db` → courbes tracées mais pas de légende, alors qu'un upload frais des mêmes fichiers l'affiche.
+
+**Contournement (sans code)** : bouton **Auto** dans la barre d'outils de `FileTable` (re-remplit les légendes depuis les noms), puis **Save / Save As** pour re-sauver le pool → le `.db` repart avec des labels remplis. Les pools sauvegardés **après** le fix ne sont pas concernés.
+
+**Fix optionnel** (si on veut que les vieux pools s'affichent sans manip) : dans `restorePool`, forcer le repli filename quand le label persistté est vide, p.ex. `legend_label: data.styles[fileId]?.legend_label || f.filename.replace(/\.[^.]+$/, '')`. Non retenu ici : on préfère respecter ce qu'un pool a explicitement sauvé (un `Clear` volontaire doit rester vide au rechargement). Voir la section « Légende » de [CLAUDE.md](CLAUDE.md).
+
+**Prevention**: quand un défaut applicatif change, se rappeler que les artefacts persistés (pools `.db`) portent l'**ancien** défaut ; le fallback ne s'applique qu'aux champs réellement absents, pas aux valeurs vides explicitement enregistrées.

@@ -7,6 +7,9 @@ SETTINGS_DIR = os.path.join(SHARE_PATH, "plot_settings") if SHARE_PATH else ""
 # Per-session disk persistence (one <sid>.db per browser session)
 SESSIONS_DIR = os.environ.get("SESSIONS_DIR", os.path.join(UPLOAD_DIR, "sessions"))
 
+# Connection-tracking metrics DB (one per deployment → isolé prod/beta via UPLOAD_DIR)
+METRICS_DB = os.environ.get("METRICS_DB", os.path.join(UPLOAD_DIR, "metrics.sqlite"))
+
 # Multi-tenant limits — good neighbour on a SHARED server. NVMe is the backing
 # store: only actively-used sessions stay hot in RAM (≈ peak concurrency), the
 # rest live on disk and are reloaded on return. RAM is decoupled from user count.

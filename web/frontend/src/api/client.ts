@@ -1,4 +1,7 @@
-import type { FileInfo, FileStyle, PlotTrace, ProcessingSettings, StyleSettings } from '../types';
+import type {
+  FileInfo, FileStyle, PlotTrace, ProcessingSettings, StyleSettings,
+  MetricsSummary, MetricsDailyRow, MetricsEndpointRow,
+} from '../types';
 
 // Same-origin by default (frontend served by the backend). Override with
 // VITE_API_URL when running the Vite dev server on a separate port.
@@ -180,6 +183,25 @@ export async function getSessionState(): Promise<{
   plot_settings?: { x_column: string; y_columns: string[]; y2_columns: string[] };
 }> {
   const res = await fetch(`${API_BASE}/session`, { headers: sidHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// Connection-tracking metrics (onglet Metrics).
+export async function getMetricsSummary(): Promise<MetricsSummary> {
+  const res = await fetch(`${API_BASE}/metrics/summary`, { headers: sidHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getMetricsDaily(days = 30): Promise<{ rows: MetricsDailyRow[] }> {
+  const res = await fetch(`${API_BASE}/metrics/daily?days=${days}`, { headers: sidHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getMetricsEndpoints(): Promise<{ rows: MetricsEndpointRow[] }> {
+  const res = await fetch(`${API_BASE}/metrics/endpoints`, { headers: sidHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

@@ -30,7 +30,7 @@ Postconditions
 
 Side Effects
 ------------
-- I/O, cache, logs, signaux Qt émis.
+- I/O, cache, logs.
 
 Performance
 -----------
@@ -38,19 +38,18 @@ Performance
 
 Thread-safety
 -------------
-- Sûr / non sûr; usage prévu (thread UI seulement, worker, etc.).
+- Sûr / non sûr; usage prévu (RLock par session, worker borné par HEAVY_SEM, etc.).
 
 Examples
 --------
 >>> # df: pandas DataFrame prêt à tracer
->>> canvas.plot_data(df, x_col="time", y_col="value")
->>> canvas.draw()
+>>> traces = build_plot_traces(df, x_col="time", y_cols=["value"])
 
 See Also
 --------
-- data_manager.py#DataManager.run / ._process_file_lazy
-- data_pipeline.py#DataPipeline.process_data
-- plot_canvas.py#PlotCanvas.plot_data / .draw
+- web/backend/core/data_loader.py — parsing CSV/Excel (décimales européennes)
+- web/backend/core/pipeline.py#DataPipeline.process_data
+- web/backend/api/plot.py — construction des traces Plotly
 """
 
 ## Exemple minimal appliqué
@@ -80,6 +79,6 @@ def apply(df: "pd.DataFrame") -> "pd.DataFrame":
 
     Side Effects
     ------------
-    - Aucun (pas d’I/O). Peut émettre des signaux Qt si intégré dans un QObject.
+    - Aucun (pas d’I/O).
     """
     ...

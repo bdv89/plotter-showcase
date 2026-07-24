@@ -1,3 +1,6 @@
+> ⚠️ **Doc legacy (desktop PyQt5 archivé)** — modules retirés de l'arbre. Voir
+> [README.md](README.md). Code : tag `legacy-desktop-2026-06-21`.
+
 ```mermaid
 %% Mermaid: dépendances entre modules (A importe B ⇒ A --> B)
 flowchart LR

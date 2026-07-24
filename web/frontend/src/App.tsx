@@ -4,12 +4,13 @@ import { ColumnSelector } from './components/ColumnSelector';
 import { PlotView } from './components/PlotView';
 import { ProcessingPanel } from './components/ProcessingPanel';
 import { ExtractionModal } from './components/ExtractionModal';
+import { MetricsView } from './components/MetricsView';
 import { useAppStore } from './store/appStore';
 import { exportPool, loadPool, uploadFiles, getSessionState } from './api/client';
 import { pickAndSave, writeBlob, openDataFiles } from './utils/saveFile';
 import './App.css';
 
-const SECTIONS = ['page-data', 'page-plot', 'page-processing'];
+const SECTIONS = ['page-data', 'page-plot', 'page-processing', 'page-metrics'];
 
 function App() {
   const [extractionOpen, setExtractionOpen] = useState(false);
@@ -244,6 +245,7 @@ function App() {
           <button className={activeSection === 'page-data' ? 'active' : ''} onClick={() => scrollTo('page-data')}>Data</button>
           <button className={activeSection === 'page-plot' ? 'active' : ''} onClick={() => scrollTo('page-plot')}>Plot</button>
           <button className={activeSection === 'page-processing' ? 'active' : ''} onClick={() => scrollTo('page-processing')}>Process</button>
+          <button className={activeSection === 'page-metrics' ? 'active' : ''} onClick={() => scrollTo('page-metrics')}>Metrics</button>
         </nav>
         <div className="header-actions">
           <button
@@ -306,6 +308,10 @@ function App() {
 
         <section className="page page-processing" id="page-processing">
           <ProcessingPanel />
+        </section>
+
+        <section className="page page-metrics" id="page-metrics">
+          <MetricsView />
         </section>
       </div>
 

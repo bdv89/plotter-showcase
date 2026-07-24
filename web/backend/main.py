@@ -4,12 +4,15 @@ import os
 import shutil
 
 from api.extract import router as extract_router
+from api.metrics import router as metrics_router
 from api.plot import router as plot_router
 from api.pool import router as pool_router
 from api.process import router as process_router
 from api.upload import router as upload_router
-from config import FRONTEND_DIST, SESSIONS_DIR, SHARE_PATH, UPLOAD_DIR
-from fastapi import Depends, FastAPI
+from config import FRONTEND_DIST, METRICS_DB, SESSIONS_DIR, SHARE_PATH, UPLOAD_DIR
+from core import metrics
+from fastapi import Depends, FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sessions import cleanup_expired, get_session, manager, session_db_path
@@ -31,6 +34,35 @@ app.include_router(plot_router, prefix="/api", tags=["plot"])
 app.include_router(process_router, prefix="/api", tags=["process"])
 app.include_router(extract_router, prefix="/api", tags=["extract"])
 app.include_router(pool_router, prefix="/api", tags=["pool"])
+app.include_router(metrics_router, prefix="/api", tags=["metrics"])
+
+# Endpoints exclus du suivi de connexion (polling / auto-refresh → pas de bruit).
+_METRICS_SKIP = ("/api/health", "/api/metrics")
+
+
+@app.middleware("http")
+async def track_connection(request: Request, call_next):
+    """Compte les hits par endpoint + IPs uniques (suivi de connexion, best-effort)."""
+    response = await call_next(request)
+    try:
+        path = request.url.path
+        if (
+            request.method != "OPTIONS"
+            and path.startswith("/api/")
+            and not path.startswith(_METRICS_SKIP)
+        ):
+            # IP réelle derrière nginx (X-Forwarded-For), sinon connexion directe.
+            xff = request.headers.get("x-forwarded-for")
+            ip = xff.split(",")[0].strip() if xff else (
+                request.client.host if request.client else "?"
+            )
+            # Endpoint normalisé via le template de route (cardinalité bornée).
+            route = request.scope.get("route")
+            endpoint = getattr(route, "path", path)
+            await run_in_threadpool(metrics.record, endpoint, ip)
+    except Exception as exc:  # le suivi ne doit jamais casser une requête
+        print(f"❌ track_connection failed: {exc}")
+    return response
 
 
 @app.get("/api/health")
@@ -63,6 +95,8 @@ def startup():
     print(f"🟡 Upload dir: {UPLOAD_DIR}")
     print(f"🟡 Sessions dir: {SESSIONS_DIR}")
     print(f"🟡 Share path: {SHARE_PATH or '(not set)'}")
+    metrics.init_metrics(METRICS_DB)  # connection-tracking DB
+    print(f"🟡 Metrics DB: {METRICS_DB}")
     cleanup_expired()  # purge abandoned sessions from disk on boot
 
 
