@@ -43,12 +43,19 @@ class ExtractRequest(BaseModel):
     operation: str
     x_column: Optional[str] = None
     x_value: Optional[float] = None
+    x_min: Optional[float] = None  # borne basse de l'intervalle X (filtre optionnel)
+    x_max: Optional[float] = None  # borne haute de l'intervalle X (filtre optionnel)
     precision: int = 6
     condition_column: Optional[str] = None
     threshold: Optional[float] = None
     operator: Optional[str] = None
     fallback_type: str = "none"
     fallback_value: Optional[float] = None
+
+
+class ExtractRemoveRequest(BaseModel):
+    # None → efface toutes les colonnes extraites ; sinon retire cette colonne.
+    column_name: Optional[str] = None
 
 
 class PoolSaveRequest(BaseModel):

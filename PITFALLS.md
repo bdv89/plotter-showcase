@@ -38,6 +38,7 @@ Quick reference for common bugs and their fixes.
 30. [Fixed Y min ignored → axis autoscales to -1](#fixed-y-min-ignored--axis-autoscales-to--1) ✅ FIXED
 31. [Copy Data: navigator.clipboard undefined on HTTP/LAN](#copy-data-navigatorclipboard-undefined-on-httplan) ✅ FIXED
 32. [Old .db pool loads with no legend](#old-db-pool-loads-with-no-legend) ⚠️ PAR DESIGN
+33. [Clear all + Load freezes: RLock released cross-thread](#clear-all--load-freezes-rlock-released-cross-thread) ✅ FIXED
 
 ---
 
@@ -792,3 +793,29 @@ Dry-run after fix: 64 files / 533 KB, 0 failures.
 **Fix optionnel** (si on veut que les vieux pools s'affichent sans manip) : dans `restorePool`, forcer le repli filename quand le label persistté est vide, p.ex. `legend_label: data.styles[fileId]?.legend_label || f.filename.replace(/\.[^.]+$/, '')`. Non retenu ici : on préfère respecter ce qu'un pool a explicitement sauvé (un `Clear` volontaire doit rester vide au rechargement). Voir la section « Légende » de [CLAUDE.md](CLAUDE.md).
 
 **Prevention**: quand un défaut applicatif change, se rappeler que les artefacts persistés (pools `.db`) portent l'**ancien** défaut ; le fallback ne s'applique qu'aux champs réellement absents, pas aux valeurs vides explicitement enregistrées.
+
+---
+
+## Clear all + Load freezes: RLock released cross-thread
+
+> ✅ **FIXED** (2026): après un **Clear all** (qui appelait `/api/reset`) suivi d'un **Load**, l'app restait figée sur « Loading… ». Cause réelle : le verrou de session (`threading.RLock`) restait bloqué à jamais.
+
+**Cause** (`sessions.py` `get_session` + `state.py`): la dépendance FastAPI `get_session` tient le verrou **à cheval sur le `yield`** :
+```python
+def get_session(...):
+    st = manager.get(sid)
+    with st.lock:      # __enter__ = acquire
+        yield st       # requête traitée
+                       # __exit__ = release
+```
+Pour une dépendance **sync-generator**, Starlette exécute `__enter__` et `__exit__` via le threadpool anyio, **potentiellement sur deux threads différents**. Un `threading.RLock` est lié au thread : `release()` depuis un autre thread lève `RuntimeError: cannot release un-acquired lock`. Pire, l'exception laisse le verrou **jamais relâché** → la requête suivante sur la **même session** (le `Load`) bloque indéfiniment sur `with st.lock:` → **UI figée en loading**. Le polling constant de l'onglet Metrics augmentait la probabilité de tomber sur le mauvais thread.
+
+**Symptom**: `backend.err.log` montre `RuntimeError: cannot release un-acquired lock` à `sessions.py … with st.lock:` ; côté UI, un enchaînement Clear all → Load (ou toute séquence de requêtes rapprochées) fige l'app.
+
+**Solution** (`state.py`): passer le verrou de session de `RLock` à `threading.Lock`. Un `Lock` **n'a pas de contrôle de propriétaire** → il tolère un `release()` cross-thread (pas d'exception, pas de blocage permanent). Sûr ici car le verrou n'est **jamais ré-entrant** (utilisé au seul endroit `get_session`, une fois par requête — vérifié par `grep "\.lock"`).
+```python
+# state.py — AppState.__init__
+self.lock = threading.Lock()  # PAS RLock : release peut arriver sur un autre thread
+```
+
+**Prevention**: ne jamais tenir un `threading.RLock` à cheval sur le `yield` d'une dépendance FastAPI sync (acquire/release peuvent changer de thread). Utiliser un `threading.Lock` (tolère le release cross-thread) tant qu'il n'y a pas de ré-entrance, ou verrouiller **à l'intérieur** de chaque handler plutôt qu'autour du yield. Un `RLock` qui échoue au release reste verrouillé → gel garanti de la session.

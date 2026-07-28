@@ -10,7 +10,15 @@ MAX_CACHE_SIZE = 50
 class AppState:
     def __init__(self):
         self.sid = ""  # session id (set by SessionManager)
-        self.lock = threading.RLock()  # serialises requests within one session
+        # Serialises requests within one session. threading.Lock (not RLock):
+        # get_session holds it across a sync-generator yield, whose __enter__ /
+        # __exit__ can run on DIFFERENT anyio threadpool threads. RLock checks the
+        # owner thread on release → "cannot release un-acquired lock", and worse,
+        # a failed release leaves the lock held forever → the next request on that
+        # session hangs (UI freeze). Lock has no owner check and tolerates
+        # cross-thread release. Safe here because the lock is never acquired
+        # re-entrantly (only used in get_session, once per request).
+        self.lock = threading.Lock()
 
         self.files = {}  # file_id -> {filename, file_path, data (DataFrame), headers, units}
         self.styles = {}  # file_id -> {line_color, line_color_y2, line_style, legend_label}

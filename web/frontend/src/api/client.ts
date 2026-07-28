@@ -75,6 +75,8 @@ export async function extractData(request: {
   operation: string;
   x_column?: string;
   x_value?: number;
+  x_min?: number;
+  x_max?: number;
   threshold?: number;
   condition_column?: string;
   operator?: string;
@@ -95,6 +97,8 @@ export async function extractData(request: {
           operation: backendOp,
           x_column: request.x_column,
           x_value: request.x_value,
+          x_min: request.x_min,
+          x_max: request.x_max,
           threshold: request.threshold,
           condition_column: request.condition_column,
           operator: request.operator,
@@ -114,8 +118,26 @@ export async function extractData(request: {
   return { results };
 }
 
+// Supprime une colonne extraite (de tous les fichiers), ou toutes si name absent.
+// Persisté côté serveur → ne réapparaît pas au rechargement.
+export async function removeExtractedColumn(name?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/extract/remove`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...sidHeaders() },
+    body: JSON.stringify({ column_name: name ?? null }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function deleteFile(fileId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/files/${fileId}`, { method: 'DELETE', headers: sidHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+// Vide toute la session serveur (fichiers + copies disque + .db) en un seul appel.
+// Bien plus rapide que N suppressions unitaires (chacune réécrit tout le .db).
+export async function resetSession(): Promise<void> {
+  const res = await fetch(`${API_BASE}/reset`, { method: 'DELETE', headers: sidHeaders() });
   if (!res.ok) throw new Error(await res.text());
 }
 

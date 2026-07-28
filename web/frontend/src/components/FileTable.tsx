@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
-import { deleteFile } from '../api/client';
+import { deleteFile, resetSession, removeExtractedColumn as removeExtractedColumnApi } from '../api/client';
 import { PALETTE_NAMES, displayTokens } from '../utils/coloring';
 
 const LINE_STYLES = [
@@ -23,6 +23,8 @@ export function FileTable() {
   const autoColorFiles = useAppStore(s => s.autoColorFiles);
   const seriesTokenIndices = useAppStore(s => s.seriesTokenIndices);
   const setSeriesTokenIndices = useAppStore(s => s.setSeriesTokenIndices);
+  const removeExtractedColumn = useAppStore(s => s.removeExtractedColumn);
+  const clearExtractedColumns = useAppStore(s => s.clearExtractedColumns);
 
   // Live search (substring, case-insensitive) on sample names + auto-color palette.
   const [search, setSearch] = useState('');
@@ -64,6 +66,29 @@ export function FileTable() {
     return files.filter(f => f.filename.toLowerCase().includes(q));
   }, [files, search]);
 
+  // Supprime une colonne extraite (tous fichiers), avec confirmation, côté
+  // serveur + store → ne réapparaît pas au rechargement.
+  const handleDeleteExtracted = async (name: string) => {
+    if (!window.confirm(`Supprimer la colonne « ${name} » ?`)) return;
+    try {
+      await removeExtractedColumnApi(name);
+    } catch (err) {
+      console.error('Failed to delete extracted column:', err);
+    }
+    removeExtractedColumn(name);
+  };
+
+  // Supprime toutes les colonnes extraites (un seul appel serveur).
+  const handleClearExtracted = async () => {
+    if (!window.confirm('Supprimer toutes les colonnes extraites ?')) return;
+    try {
+      await removeExtractedColumnApi();
+    } catch (err) {
+      console.error('Failed to clear extracted columns:', err);
+    }
+    clearExtractedColumns();
+  };
+
   const handleDelete = async (fileId: string) => {
     try {
       await deleteFile(fileId);
@@ -71,6 +96,19 @@ export function FileTable() {
     } catch (err) {
       console.error('Failed to delete file:', err);
     }
+  };
+
+  // Vide toute la liste (avec confirmation). Un seul appel /reset côté serveur
+  // (une écriture .db) au lieu de N suppressions unitaires → rapide en LAN.
+  const clearAll = async () => {
+    if (files.length === 0) return;
+    if (!window.confirm(`Supprimer les ${files.length} fichier(s) ?`)) return;
+    try {
+      await resetSession();
+    } catch (err) {
+      console.error('Clear all failed:', err);
+    }
+    files.forEach(f => removeFile(f.file_id));
   };
 
   // Collect all extracted column names
@@ -112,6 +150,16 @@ export function FileTable() {
             <button onClick={autoLegend} title="Fill legends from filenames">Auto</button>
             <button onClick={clearLegend} title="Clear all legends">Clear</button>
           </div>
+          <div className="control-group">
+            <span className="control-label">Files</span>
+            <button onClick={clearAll} title="Remove all files from the list">Clear all</button>
+          </div>
+          {extraCols.length > 0 && (
+            <div className="control-group">
+              <span className="control-label">Extracted</span>
+              <button onClick={handleClearExtracted} title="Delete all extracted columns">Clear</button>
+            </div>
+          )}
           {exampleTokens.length > 0 && (
             <div className="control-group series-picker" title="Define what makes a series (click a part of the example name)">
               <span className="control-label">Series</span>
@@ -154,7 +202,17 @@ export function FileTable() {
             <th className="col-style">Style</th>
             <th className="col-legend">Legend</th>
             {extraCols.map(name => (
-              <th key={name} className="col-extracted">{name}</th>
+              <th key={name} className="col-extracted">
+                {name}
+                <button
+                  className="delete-btn"
+                  title={`Delete column "${name}"`}
+                  onClick={() => handleDeleteExtracted(name)}
+                  style={{ marginLeft: 4 }}
+                >
+                  ✕
+                </button>
+              </th>
             ))}
             <th className="col-delete"></th>
           </tr>

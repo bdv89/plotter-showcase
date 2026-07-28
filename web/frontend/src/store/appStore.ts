@@ -125,6 +125,7 @@ interface AppStore {
   // Extracted columns
   extractedColumns: Record<string, Record<string, { value: number; precision: number }>>;
   setExtractedColumn: (fileId: string, colName: string, value: number, precision: number) => void;
+  removeExtractedColumn: (name: string) => void;
   clearExtractedColumns: () => void;
   restorePool: (data: {
     files: FileInfo[];
@@ -272,6 +273,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
         [fileId]: { ...fileData, [colName]: { value, precision } },
       },
     });
+  },
+  removeExtractedColumn: (name) => {
+    const current = get().extractedColumns;
+    const next: typeof current = {};
+    for (const [fileId, cols] of Object.entries(current)) {
+      const { [name]: _drop, ...rest } = cols;
+      void _drop;
+      next[fileId] = rest;
+    }
+    set({ extractedColumns: next });
   },
   clearExtractedColumns: () => set({ extractedColumns: {} }),
   restorePool: (data) => {

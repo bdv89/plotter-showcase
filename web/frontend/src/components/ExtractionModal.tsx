@@ -36,6 +36,10 @@ export function ExtractionModal({ open, onClose }: Props) {
   const [xColumn, setXColumn] = useState('');
   const [xValue, setXValue] = useState(0);
   const [threshold, setThreshold] = useState(0);
+  // Filtre optionnel sur un intervalle X (ex. moyenne de Y pour X entre min et max).
+  const [useXRange, setUseXRange] = useState(false);
+  const [xMin, setXMin] = useState('');
+  const [xMax, setXMax] = useState('');
   const [customName, setCustomName] = useState('');
   const [precision, setPrecision] = useState(4);
   const [preview, setPreview] = useState<Record<string, number | null> | null>(null);
@@ -55,6 +59,11 @@ export function ExtractionModal({ open, onClose }: Props) {
   const needsXColumn = NEEDS_X_COLUMN.includes(operation);
   const needsXValue = NEEDS_X_VALUE.includes(operation);
   const needsThreshold = NEEDS_THRESHOLD.includes(operation);
+  // X column est requise si l'opération en a besoin OU si on filtre sur un intervalle X.
+  const showXColumn = needsXColumn || useXRange;
+  // Bornes parsées : champ vide = borne ouverte (undefined).
+  const xMinNum = xMin.trim() === '' ? undefined : Number(xMin);
+  const xMaxNum = xMax.trim() === '' ? undefined : Number(xMax);
 
   const handlePreview = useCallback(async () => {
     if (!column) { setError('Select a column'); return; }
@@ -67,8 +76,10 @@ export function ExtractionModal({ open, onClose }: Props) {
         file_ids: checkedFileList.map(f => f.file_id),
         column,
         operation,
-        x_column: needsXColumn ? xColumn : undefined,
+        x_column: showXColumn ? xColumn : undefined,
         x_value: needsXValue ? xValue : undefined,
+        x_min: useXRange ? xMinNum : undefined,
+        x_max: useXRange ? xMaxNum : undefined,
         threshold: needsThreshold ? threshold : undefined,
         condition_column: needsThreshold ? xColumn : undefined,
         operator: operation === 'y_when_x_gt' ? '>' : operation === 'y_when_x_lt' ? '<' : undefined,
@@ -80,11 +91,12 @@ export function ExtractionModal({ open, onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [column, operation, xColumn, xValue, threshold, checkedFileList, needsXColumn, needsXValue, needsThreshold, processing]);
+  }, [column, operation, xColumn, xValue, threshold, checkedFileList, showXColumn, needsXValue, needsThreshold, useXRange, xMinNum, xMaxNum, processing]);
 
   const handleApply = useCallback(() => {
     if (!preview) return;
-    const colName = customName || `${operation}(${column})`;
+    const rangeSuffix = useXRange ? `[X:${xMin || '…'}–${xMax || '…'}]` : '';
+    const colName = customName || `${operation}(${column})${rangeSuffix}`;
     if (!colName.trim()) { setError('Enter a column name'); return; }
 
     Object.entries(preview).forEach(([fileId, value]) => {
@@ -93,7 +105,7 @@ export function ExtractionModal({ open, onClose }: Props) {
       }
     });
     onClose();
-  }, [preview, customName, operation, column, precision, setExtractedColumn, onClose]);
+  }, [preview, customName, operation, column, precision, useXRange, xMin, xMax, setExtractedColumn, onClose]);
 
   if (!open) return null;
 
@@ -125,13 +137,40 @@ export function ExtractionModal({ open, onClose }: Props) {
                 </select>
               </div>
 
-              {needsXColumn && (
+              {showXColumn && (
                 <div className="field">
                   <label>X Column</label>
                   <select value={xColumn} onChange={e => setXColumn(e.target.value)}>
                     <option value="">-- Select --</option>
                     {columns.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                </div>
+              )}
+
+              <div className="field">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={useXRange}
+                    onChange={e => setUseXRange(e.target.checked)}
+                  />
+                  {' '}Restrict to X interval
+                </label>
+              </div>
+
+              {useXRange && (
+                <div className="field">
+                  <label>X interval (min / max — leave one empty for an open bound)</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="number" step="any" placeholder="X min"
+                      value={xMin} onChange={e => setXMin(e.target.value)}
+                    />
+                    <input
+                      type="number" step="any" placeholder="X max"
+                      value={xMax} onChange={e => setXMax(e.target.value)}
+                    />
+                  </div>
                 </div>
               )}
 

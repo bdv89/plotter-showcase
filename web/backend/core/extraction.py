@@ -138,7 +138,8 @@ OPERATIONS = {
 
 def compute_extraction(df, column, operation, x_column=None, x_value=None,
                        condition_column=None, threshold=None, operator=None,
-                       fallback_type='none', fallback_value=None):
+                       fallback_type='none', fallback_value=None,
+                       x_min=None, x_max=None):
     """Compute a single extraction on a DataFrame.
 
     Args:
@@ -152,6 +153,8 @@ def compute_extraction(df, column, operation, x_column=None, x_value=None,
         operator: '>' or '<' (for conditional operations)
         fallback_type: 'none', 'custom', 'first', 'last'
         fallback_value: Custom fallback value
+        x_min: Lower bound of an optional X interval (rows with X >= x_min)
+        x_max: Upper bound of an optional X interval (rows with X <= x_max)
 
     Returns:
         float or None: Extracted value, or None if error
@@ -162,6 +165,25 @@ def compute_extraction(df, column, operation, x_column=None, x_value=None,
         if column not in df.columns:
             print(f"❌ Column '{column}' not found")
             return None
+
+        # Optional X-interval filter: restrict the DataFrame to rows where
+        # x_min <= X <= x_max BEFORE computing the operation. Honors a single
+        # bound if the other is None. Applies to every operation (basic + needs_x).
+        if x_min is not None or x_max is not None:
+            if not x_column or x_column not in df.columns:
+                print(f"❌ X interval requested but X column '{x_column}' not found")
+                return None
+            xcol = df[x_column]
+            mask = xcol.notna()
+            if x_min is not None:
+                mask &= xcol >= x_min
+            if x_max is not None:
+                mask &= xcol <= x_max
+            df = df[mask]
+            print(f"🟡 X interval [{x_min}, {x_max}] → {len(df)} points")
+            if len(df) == 0:
+                print(f"❌ No data points in X interval [{x_min}, {x_max}]")
+                return None
 
         series = df[column].dropna()
 

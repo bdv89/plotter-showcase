@@ -2,8 +2,8 @@
 
 from core.extraction import OPERATIONS, compute_extraction
 from fastapi import APIRouter, Depends, HTTPException
-from models.schemas import ExtractRequest
-from sessions import get_session
+from models.schemas import ExtractRemoveRequest, ExtractRequest
+from sessions import get_session, manager
 from state import AppState
 
 router = APIRouter()
@@ -34,6 +34,8 @@ def extract_single(req: ExtractRequest, state: AppState = Depends(get_session)):
         operator=req.operator,
         fallback_type=req.fallback_type,
         fallback_value=req.fallback_value,
+        x_min=req.x_min,
+        x_max=req.x_max,
     )
 
     if result is not None:
@@ -92,6 +94,8 @@ def extract_preview(req: ExtractRequest, state: AppState = Depends(get_session))
             operator=req.operator,
             fallback_type=req.fallback_type,
             fallback_value=req.fallback_value,
+            x_min=req.x_min,
+            x_max=req.x_max,
         )
 
         if value is not None:
@@ -102,6 +106,25 @@ def extract_preview(req: ExtractRequest, state: AppState = Depends(get_session))
 
     print(f"✅ Preview complete: {len(results)} files")
     return {"results": results, "operation": req.operation, "column": req.column}
+
+
+@router.post("/extract/remove")
+def remove_extracted(req: ExtractRemoveRequest, state: AppState = Depends(get_session)):
+    """Remove one extracted column (from every file) or clear them all, then persist
+    once so the deletion survives a page reload / rehydrate."""
+    if req.column_name:
+        removed = 0
+        for cols in state.extracted_columns.values():
+            if req.column_name in cols:
+                del cols[req.column_name]
+                removed += 1
+        print(f"🟡 Removed extracted column '{req.column_name}' from {removed} file(s)")
+    else:
+        state.extracted_columns.clear()
+        print("🟡 Cleared all extracted columns")
+
+    manager.persist(state.sid)
+    return {"status": "ok"}
 
 
 @router.get("/extract/operations")
