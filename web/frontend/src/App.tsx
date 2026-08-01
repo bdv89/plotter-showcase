@@ -1,19 +1,18 @@
 import { useRef, useState, useEffect } from 'react';
 import { FileTable } from './components/FileTable';
-import { ColumnSelector } from './components/ColumnSelector';
 import { PlotView } from './components/PlotView';
 import { ProcessingPanel } from './components/ProcessingPanel';
 import { ExtractionModal } from './components/ExtractionModal';
+import { HelpModal } from './components/HelpModal';
 import { MetricsView } from './components/MetricsView';
 import { useAppStore } from './store/appStore';
 import { exportPool, loadPool, uploadFiles, getSessionState } from './api/client';
 import { pickAndSave, writeBlob, openDataFiles } from './utils/saveFile';
 import './App.css';
 
-const SECTIONS = ['page-data', 'page-plot', 'page-processing', 'page-metrics'];
-
 function App() {
   const [extractionOpen, setExtractionOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [poolStatus, setPoolStatus] = useState('');
   const [activeSection, setActiveSection] = useState('page-data');
   const [dragOver, setDragOver] = useState(false);
@@ -26,21 +25,30 @@ function App() {
   const error = useAppStore(s => s.error);
   const setError = useAppStore(s => s.setError);
 
-  // Highlight the nav tab matching the most-visible section.
+  // Keyboard: Alt+1..4 switch tabs (Alt+digit avoids the browser's Ctrl+digit).
+  // !shiftKey so it never overlaps Alt+Shift+digit (Group By) handled in FileTable.
   useEffect(() => {
-    const root = document.querySelector('.app-body');
-    const els = SECTIONS.map(id => document.getElementById(id)).filter(Boolean) as HTMLElement[];
-    if (!root || els.length === 0) return;
-    const obs = new IntersectionObserver(
-      entries => {
-        const visible = entries.filter(e => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]) setActiveSection(visible[0].target.id);
-      },
-      { root, threshold: [0.25, 0.5, 0.75] },
-    );
-    els.forEach(el => obs.observe(el));
-    return () => obs.disconnect();
+    const onKey = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+      // "?" opens help, Escape closes it (not while typing in a field).
+      if (!typing && e.key === '?') { e.preventDefault(); setHelpOpen(true); return; }
+      if (e.key === 'Escape') { setHelpOpen(false); }
+
+      // Alt+1..4 switch tabs (no other modifier; Alt+Shift+digit is Group By).
+      if (!e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return;
+      const map: Record<string, string> = {
+        Digit1: 'page-data', Digit2: 'page-plot', Digit3: 'page-processing', Digit4: 'page-metrics',
+      };
+      const target = map[e.code];
+      if (target) {
+        e.preventDefault();
+        setActiveSection(target);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, []);
 
   // On startup, rehydrate this browser's server-side session so a refresh (or a
@@ -172,10 +180,6 @@ function App() {
     processFiles(dropped);
   };
 
-  const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   // navigator.clipboard n'existe qu'en contexte sécurisé (HTTPS/localhost) ;
   // en HTTP sur IP LAN (Firefox strict), il est undefined → fallback execCommand.
   const copyToClipboard = async (text: string): Promise<boolean> => {
@@ -242,12 +246,19 @@ function App() {
       <header className="app-header">
         <h1>Plotter</h1>
         <nav className="page-nav">
-          <button className={activeSection === 'page-data' ? 'active' : ''} onClick={() => scrollTo('page-data')}>Data</button>
-          <button className={activeSection === 'page-plot' ? 'active' : ''} onClick={() => scrollTo('page-plot')}>Plot</button>
-          <button className={activeSection === 'page-processing' ? 'active' : ''} onClick={() => scrollTo('page-processing')}>Process</button>
-          <button className={activeSection === 'page-metrics' ? 'active' : ''} onClick={() => scrollTo('page-metrics')}>Metrics</button>
+          <button className={activeSection === 'page-data' ? 'active' : ''} onClick={() => setActiveSection('page-data')}>Data</button>
+          <button className={activeSection === 'page-plot' ? 'active' : ''} onClick={() => setActiveSection('page-plot')}>Plot</button>
+          <button className={activeSection === 'page-processing' ? 'active' : ''} onClick={() => setActiveSection('page-processing')}>Process</button>
+          <button className={activeSection === 'page-metrics' ? 'active' : ''} onClick={() => setActiveSection('page-metrics')}>Metrics</button>
         </nav>
         <div className="header-actions">
+          <button
+            className="help-button"
+            onClick={() => setHelpOpen(true)}
+            title="Aide \u00B7 raccourcis (?)"
+          >
+            ?
+          </button>
           <button
             className="theme-toggle"
             onClick={toggleTheme}
@@ -276,7 +287,7 @@ function App() {
             onChange={handleLoadInput}
           />
           {poolStatus && <span className="pool-status">{poolStatus}</span>}
-          <button className="extract-button" onClick={() => setExtractionOpen(true)}>
+          <button className="pool-button" onClick={() => setExtractionOpen(true)}>
             Extract Data
           </button>
           <button
@@ -297,25 +308,25 @@ function App() {
       )}
 
       <div className="app-body">
-        <section className="page page-data" id="page-data">
+        <section className={`page page-data${activeSection === 'page-data' ? ' active' : ''}`} id="page-data">
           <FileTable />
-          <ColumnSelector />
         </section>
 
-        <section className="page page-plot" id="page-plot">
+        <section className={`page page-plot${activeSection === 'page-plot' ? ' active' : ''}`} id="page-plot">
           <PlotView />
         </section>
 
-        <section className="page page-processing" id="page-processing">
+        <section className={`page page-processing${activeSection === 'page-processing' ? ' active' : ''}`} id="page-processing">
           <ProcessingPanel />
         </section>
 
-        <section className="page page-metrics" id="page-metrics">
+        <section className={`page page-metrics${activeSection === 'page-metrics' ? ' active' : ''}`} id="page-metrics">
           <MetricsView />
         </section>
       </div>
 
       <ExtractionModal open={extractionOpen} onClose={() => setExtractionOpen(false)} />
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

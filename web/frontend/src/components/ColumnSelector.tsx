@@ -97,13 +97,13 @@ export function ColumnSelector() {
     <div className="column-selector">
       <div className="tab-bar">
         <button className={activeTab === 'x' ? 'active' : ''} onClick={() => setActiveTab('x')}>
-          X Column
+          X
         </button>
         <button className={activeTab === 'y' ? 'active' : ''} onClick={() => setActiveTab('y')}>
-          Y Columns ({yColumns.length})
+          Y ({yColumns.length})
         </button>
         <button className={activeTab === 'y2' ? 'active' : ''} onClick={() => setActiveTab('y2')}>
-          Y2 Columns ({y2Columns.length})
+          Y2 ({y2Columns.length})
         </button>
       </div>
 
