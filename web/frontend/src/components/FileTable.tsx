@@ -1,8 +1,10 @@
-import { useState, useMemo, useEffect, useRef, Fragment, type MouseEvent } from 'react';
+import { useState, useMemo, useEffect, useRef, type MouseEvent } from 'react';
 import { useAppStore } from '../store/appStore';
+import type { FileStyle } from '../types';
 import { ColumnSelector } from './ColumnSelector';
+import { StyleBar } from './StyleBar';
 import { deleteFile, resetSession, removeExtractedColumn as removeExtractedColumnApi } from '../api/client';
-import { PALETTE_NAMES, COLOR_PALETTES, displayTokens, seriesColorIndices } from '../utils/coloring';
+import { COLOR_PALETTES } from '../utils/coloring';
 
 const LINE_STYLES = [
   { value: 'solid', label: 'Solid' },
@@ -18,25 +20,23 @@ export function FileTable() {
   const extractedColumns = useAppStore(s => s.extractedColumns);
   const toggleFile = useAppStore(s => s.toggleFile);
   const setFileStyle = useAppStore(s => s.setFileStyle);
+  const patchStyles = useAppStore(s => s.patchStyles);
   const removeFile = useAppStore(s => s.removeFile);
   const checkFiles = useAppStore(s => s.checkFiles);
   const uncheckFiles = useAppStore(s => s.uncheckFiles);
-  const autoColorFiles = useAppStore(s => s.autoColorFiles);
-  const seriesTokenIndices = useAppStore(s => s.seriesTokenIndices);
-  const setSeriesTokenIndices = useAppStore(s => s.setSeriesTokenIndices);
   const removeExtractedColumn = useAppStore(s => s.removeExtractedColumn);
   const clearExtractedColumns = useAppStore(s => s.clearExtractedColumns);
+  const paletteName = useAppStore(s => s.paletteName);
   const y2Columns = useAppStore(s => s.y2Columns);
   const showY2 = y2Columns.length > 0;
 
-  // Live search (substring, case-insensitive) on sample names + auto-color palette.
+  // Live search (substring, case-insensitive) on sample names.
   const [search, setSearch] = useState('');
-  const [palette, setPalette] = useState(PALETTE_NAMES[0]);
 
   // Shared color popover (palette swatches + Custom) — one instance, positioned
   // fixed at the clicked swatch so the table's internal scroll never clips it.
   const [picker, setPicker] = useState<{ x: number; y: number; current: string; apply: (c: string) => void } | null>(null);
-  const activePalette = COLOR_PALETTES[palette] || [];
+  const activePalette = COLOR_PALETTES[paletteName] || [];
   const openPicker = (e: MouseEvent<HTMLButtonElement>, current: string, apply: (c: string) => void) => {
     const r = e.currentTarget.getBoundingClientRect();
     setPicker({ x: r.left, y: r.bottom + 4, current, apply });
@@ -50,63 +50,14 @@ export function FileTable() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Example tokens from the first loaded file, for the visual series picker.
-  const exampleTokens = useMemo(
-    () => (files.length > 0 ? displayTokens(files[0].filename) : []),
-    [files],
-  );
-
-  // Toggle a series-defining token (empty selection = auto) and re-color immediately.
-  const toggleSeriesToken = (i: number) => {
-    const next = seriesTokenIndices.includes(i)
-      ? seriesTokenIndices.filter(x => x !== i)
-      : [...seriesTokenIndices, i];
-    setSeriesTokenIndices(next);
-    autoColorFiles(palette);
-  };
-
-  const clearSeries = () => {
-    setSeriesTokenIndices([]);
-    autoColorFiles(palette);
-  };
-
-  // Fill every legend from the filename (without extension), or clear them all.
-  const autoLegend = () => {
-    files.forEach(f =>
-      setFileStyle(f.file_id, { legend_label: f.filename.replace(/\.[^.]+$/, '') }),
-    );
-  };
-  const clearLegend = () => {
-    files.forEach(f => setFileStyle(f.file_id, { legend_label: '' }));
-  };
-
-  // Peuple la légende depuis le regroupement de couleur (mêmes séries -> même
-  // couleur) : une seule entrée par couleur (1er sample = token(s) de série, les
-  // autres vides -> masqués de la légende Plotly). Sans token sélectionné, chaque
-  // fichier est son propre groupe -> nom complet (comme Auto).
-  const autoLegendByColor = () => {
-    const indices = seriesColorIndices(files.map(f => f.filename), seriesTokenIndices);
-    const picked = seriesTokenIndices.slice().sort((a, b) => a - b);
-    const seen = new Set<number>();
-    files.forEach((f, i) => {
-      const grp = indices[i];
-      let label = '';
-      if (!seen.has(grp)) {
-        seen.add(grp);
-        label = picked.length > 0
-          ? picked.map(t => displayTokens(f.filename)[t] ?? '').filter(Boolean).join(' ')
-          : f.filename.replace(/\.[^.]+$/, '');
-      }
-      setFileStyle(f.file_id, { legend_label: label });
-    });
-  };
-
   // Apply one hand-picked color to every checked sample at once (Y1 or Y2, independent).
   const applyColorToChecked = (color: string, axis: 'y1' | 'y2') => {
     const key = axis === 'y1' ? 'line_color' : 'line_color_y2';
+    const patches: Record<string, Partial<FileStyle>> = {};
     files.forEach(f => {
-      if (checkedFiles.has(f.file_id)) setFileStyle(f.file_id, { [key]: color });
+      if (checkedFiles.has(f.file_id)) patches[f.file_id] = { [key]: color };
     });
+    patchStyles(patches);
   };
 
   const visibleFiles = useMemo(() => {
@@ -191,16 +142,7 @@ export function FileTable() {
 
     const ids = visibleFiles.map(f => f.file_id);
 
-    // Group By tokens — Alt+Shift+1..9 toggle, Alt+Shift+0 = Auto.
-    if (e.altKey && e.shiftKey) {
-      const m = /^Digit([0-9])$/.exec(e.code);
-      if (!m) return;
-      e.preventDefault();
-      const n = Number(m[1]);
-      if (n === 0) clearSeries();
-      else if (n - 1 < exampleTokens.length) toggleSeriesToken(n - 1);
-      return;
-    }
+    // Group By tokens (Alt+Shift+digit) are handled globally in App (DATA + Plot).
 
     // Ctrl/Cmd+A — toggle select-all of the visible rows.
     if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA') {
@@ -272,48 +214,8 @@ export function FileTable() {
         </div>
 
         <div className="style-panel">
+          <StyleBar />
           <div className="style-row">
-            {exampleTokens.length > 0 && (
-              <div className="control-group series-picker" title="Define what makes a series (click a part of the example name)">
-                <span className="control-label">Group by</span>
-                <button
-                  className={`token-chip ${seriesTokenIndices.length === 0 ? 'active' : ''}`}
-                  onClick={clearSeries}
-                >
-                  Auto
-                </button>
-                <span className="series-eg">e.g.</span>
-                {exampleTokens.map((tok, i) => (
-                  <Fragment key={i}>
-                    {i > 0 && <span className="series-sep">·</span>}
-                    <button
-                      className={`token-chip ${seriesTokenIndices.includes(i) ? 'active' : ''}`}
-                      onClick={() => toggleSeriesToken(i)}
-                    >
-                      {tok}
-                    </button>
-                  </Fragment>
-                ))}
-              </div>
-            )}
-            <div className="control-group">
-              <span className="control-label">Palette</span>
-              <select
-                value={palette}
-                onChange={e => { setPalette(e.target.value); autoColorFiles(e.target.value); }}
-                title="Color palette (applied immediately)"
-              >
-                {PALETTE_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="style-row">
-            <div className="control-group">
-              <span className="control-label">Legend</span>
-              <button onClick={autoLegend} title="Fill legends from filenames">From names</button>
-              <button onClick={autoLegendByColor} title="Fill legend from color grouping (one entry per color)">From series</button>
-              <button onClick={clearLegend} title="Clear all legends">Clear</button>
-            </div>
             <div className="control-group">
               <span className="control-label">Selected</span>
               <button

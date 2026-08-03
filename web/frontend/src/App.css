@@ -105,10 +105,26 @@
 
 .page-plot {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   background: var(--bg);
   position: relative;
+}
+
+.plot-stylebar {
+  flex-shrink: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  margin-bottom: 8px;
+}
+
+.page-plot .plot-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .page-processing {
@@ -222,7 +238,6 @@ button:disabled {
   align-self: center;
 }
 
-.extract-button,
 .plot-button,
 .apply-button {
   background: var(--accent);
@@ -231,7 +246,6 @@ button:disabled {
   font-weight: 600;
 }
 
-.extract-button:hover:not(:disabled),
 .plot-button:hover:not(:disabled),
 .apply-button:hover:not(:disabled) {
   background: var(--accent-hover);
@@ -298,7 +312,6 @@ input[type="checkbox"] {
 .file-table-wrapper {
   flex: 1;
   min-height: 0;
-  max-width: 1100px;
   display: flex;
   flex-direction: column;
 }

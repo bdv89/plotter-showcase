@@ -1,11 +1,18 @@
 import { create } from 'zustand';
 import type { FileInfo, FileStyle, PlotTrace, StyleSettings, ProcessingSettings } from '../types';
-import { COLOR_PALETTES, seriesColorIndices } from '../utils/coloring';
+import { COLOR_PALETTES, PALETTE_NAMES, seriesColorIndices } from '../utils/coloring';
 
 const COLOR_PALETTE = [
   '#e27d60', '#85cdca', '#e8a87c', '#c38d9e', '#41b3a3', '#659dbd',
   '#daad86', '#bc986a', '#fbeec1', '#8d8741', '#5c3317', '#2d4059',
 ];
+
+const DEFAULT_FILE_STYLE: FileStyle = {
+  line_color: '#e27d60',
+  line_color_y2: '#659dbd',
+  line_style: 'solid',
+  legend_label: '',
+};
 
 // Default preset tuned for academic-publication figures: white background, black
 // axes/text, clean sans font, closed box with outward ticks, no gridlines.
@@ -105,9 +112,13 @@ interface AppStore {
   // Styles
   fileStyles: Record<string, FileStyle>;
   setFileStyle: (fileId: string, style: Partial<FileStyle>) => void;
-  autoColorFiles: (paletteName: string) => void;
+  patchStyles: (patches: Record<string, Partial<FileStyle>>) => void;
+  autoColorFiles: () => void;
+  paletteName: string;
+  applyPalette: (name: string) => void;
   seriesTokenIndices: number[];
-  setSeriesTokenIndices: (idx: number[]) => void;
+  toggleSeriesToken: (i: number) => void;
+  clearSeries: () => void;
   plotStyle: StyleSettings;
   setPlotStyle: (style: Partial<StyleSettings>) => void;
 
@@ -218,26 +229,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Styles
   fileStyles: {},
   setFileStyle: (fileId, style) => {
-    const current = get().fileStyles[fileId] || {
-      line_color: '#e27d60',
-      line_color_y2: '#659dbd',
-      line_style: 'solid',
-      legend_label: '',
-    };
+    const current = get().fileStyles[fileId] || DEFAULT_FILE_STYLE;
     set({ fileStyles: { ...get().fileStyles, [fileId]: { ...current, ...style } } });
   },
-  autoColorFiles: (paletteName) => {
+  // Merge many per-file style patches in a single set (O(N) vs N× O(N) spreads).
+  patchStyles: (patches) => {
+    const cur = get().fileStyles;
+    const next = { ...cur };
+    for (const id in patches) next[id] = { ...(cur[id] || DEFAULT_FILE_STYLE), ...patches[id] };
+    set({ fileStyles: next });
+  },
+  autoColorFiles: () => {
+    const { files, fileStyles, seriesTokenIndices, paletteName } = get();
     const palette = COLOR_PALETTES[paletteName];
     if (!palette || palette.length === 0) return;
-    const { files, fileStyles, seriesTokenIndices } = get();
     // Same series -> same color; Y2 gets the same color as Y1.
     const indices = seriesColorIndices(files.map(f => f.filename), seriesTokenIndices);
     const styles = { ...fileStyles };
     files.forEach((f, i) => {
       const idx = indices[i] ?? 0;
-      const current = styles[f.file_id] || {
-        line_color: '#e27d60', line_color_y2: '#659dbd', line_style: 'solid', legend_label: '',
-      };
+      const current = styles[f.file_id] || DEFAULT_FILE_STYLE;
       styles[f.file_id] = {
         ...current,
         line_color: palette[idx % palette.length],
@@ -246,8 +257,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
     set({ fileStyles: styles });
   },
+  paletteName: PALETTE_NAMES[0],
+  applyPalette: (name) => { set({ paletteName: name }); get().autoColorFiles(); },
   seriesTokenIndices: [],
-  setSeriesTokenIndices: (idx) => set({ seriesTokenIndices: idx }),
+  toggleSeriesToken: (i) => {
+    const cur = get().seriesTokenIndices;
+    const next = cur.includes(i) ? cur.filter(x => x !== i) : [...cur, i];
+    set({ seriesTokenIndices: next });
+    get().autoColorFiles();
+  },
+  clearSeries: () => { set({ seriesTokenIndices: [] }); get().autoColorFiles(); },
   plotStyle: { ...DEFAULT_STYLE },
   setPlotStyle: (style) => set({ plotStyle: { ...get().plotStyle, ...style } }),
 

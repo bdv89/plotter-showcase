@@ -109,17 +109,24 @@ export function PlotView() {
   const hasY2 = traces.some(t => t.yaxis === 'y2');
 
   const data: Data[] = useMemo(() => {
+    // One legend entry per label; traces sharing a label are grouped so clicking
+    // the entry toggles the whole group (a color "series" hides in one click).
+    const seenLabels = new Set<string>();
     return traces.map(trace => {
       const style = trace.file_id ? fileStyles[trace.file_id] : undefined;
       const isY2 = trace.yaxis === 'y2';
       const color = style ? (isY2 ? style.line_color_y2 : style.line_color) : undefined;
       const dash = style ? (LINE_DASH_MAP[style.line_style] || 'solid') : undefined;
-      const name = style?.legend_label || trace.name;
+      const label = style?.legend_label || '';
+      const name = label || trace.name;
+      const firstOfLabel = !!label && !seenLabels.has(label);
+      if (label) seenLabels.add(label);
       return {
         x: trace.x,
         y: trace.y,
         name,
-        showlegend: !!style?.legend_label,
+        legendgroup: label || undefined,
+        showlegend: firstOfLabel,
         type: 'scatter' as const,
         mode: 'lines' as const,
         yaxis: isY2 ? 'y2' : undefined,

@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { FileTable } from './components/FileTable';
+import { StyleBar } from './components/StyleBar';
 import { PlotView } from './components/PlotView';
 import { ProcessingPanel } from './components/ProcessingPanel';
 import { ExtractionModal } from './components/ExtractionModal';
@@ -8,6 +9,7 @@ import { MetricsView } from './components/MetricsView';
 import { useAppStore } from './store/appStore';
 import { exportPool, loadPool, uploadFiles, getSessionState } from './api/client';
 import { pickAndSave, writeBlob, openDataFiles } from './utils/saveFile';
+import { displayTokens } from './utils/coloring';
 import './App.css';
 
 function App() {
@@ -35,6 +37,22 @@ function App() {
       // "?" opens help, Escape closes it (not while typing in a field).
       if (!typing && e.key === '?') { e.preventDefault(); setHelpOpen(true); return; }
       if (e.key === 'Escape') { setHelpOpen(false); }
+
+      // Group by tokens — Alt+Shift+1..9 toggle / Alt+Shift+0 Auto, on DATA + Plot.
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && !typing) {
+        const m = /^Digit([0-9])$/.exec(e.code);
+        if (m && document.querySelector('.page-data.active, .page-plot.active')) {
+          e.preventDefault();
+          const n = Number(m[1]);
+          const st = useAppStore.getState();
+          if (n === 0) st.clearSeries();
+          else {
+            const tokens = st.files.length > 0 ? displayTokens(st.files[0].filename) : [];
+            if (n - 1 < tokens.length) st.toggleSeriesToken(n - 1);
+          }
+        }
+        return;
+      }
 
       // Alt+1..4 switch tabs (no other modifier; Alt+Shift+digit is Group By).
       if (!e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return;
@@ -313,6 +331,7 @@ function App() {
         </section>
 
         <section className={`page page-plot${activeSection === 'page-plot' ? ' active' : ''}`} id="page-plot">
+          <div className="plot-stylebar"><StyleBar /></div>
           <PlotView />
         </section>
 
