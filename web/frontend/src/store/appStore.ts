@@ -2,6 +2,13 @@ import { create } from 'zustand';
 import type { FileInfo, FileStyle, PlotTrace, StyleSettings, ProcessingSettings } from '../types';
 import { COLOR_PALETTES, PALETTE_NAMES, seriesColorIndices } from '../utils/coloring';
 
+// A single overlay layer of Plotly shapes (rect/line) + annotations (arrow/text),
+// stored loosely (Plotly objects) and re-injected into the plot layout.
+export interface PlotDrawings {
+  shapes: unknown[];
+  annotations: unknown[];
+}
+
 const COLOR_PALETTE = [
   '#e27d60', '#85cdca', '#e8a87c', '#c38d9e', '#41b3a3', '#659dbd',
   '#daad86', '#bc986a', '#fbeec1', '#8d8741', '#5c3317', '#2d4059',
@@ -121,6 +128,16 @@ interface AppStore {
   clearSeries: () => void;
   plotStyle: StyleSettings;
   setPlotStyle: (style: Partial<StyleSettings>) => void;
+
+  // Drawings overlay (single layer of Plotly shapes + annotations, above the data)
+  drawings: PlotDrawings;
+  drawingsVisible: boolean;
+  drawColor: string;
+  setDrawColor: (c: string) => void;
+  setDrawings: (d: PlotDrawings) => void;
+  addAnnotation: (ann: unknown) => void;
+  clearDrawings: () => void;
+  toggleDrawings: () => void;
 
   // Plot data
   traces: PlotTrace[];
@@ -270,6 +287,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
   plotStyle: { ...DEFAULT_STYLE },
   setPlotStyle: (style) => set({ plotStyle: { ...get().plotStyle, ...style } }),
 
+  // Drawings overlay
+  drawings: { shapes: [], annotations: [] },
+  drawingsVisible: true,
+  drawColor: '#e11d48',
+  // Single layer color: recolor every existing shape (line) + annotation
+  // (arrow + font), and remember it for new drawings (see newshape/addArrow/addText).
+  setDrawColor: (c) => {
+    const { drawings } = get();
+    const shapes = drawings.shapes.map(s => {
+      const sh = s as Record<string, unknown>;
+      return { ...sh, line: { ...(sh.line as Record<string, unknown> || {}), color: c } };
+    });
+    const annotations = drawings.annotations.map(a => {
+      const an = a as Record<string, unknown>;
+      return { ...an, arrowcolor: c, font: { ...(an.font as Record<string, unknown> || {}), color: c } };
+    });
+    set({ drawColor: c, drawings: { shapes, annotations } });
+  },
+  setDrawings: (d) => set({ drawings: d }),
+  addAnnotation: (ann) => {
+    const cur = get().drawings;
+    set({ drawings: { shapes: cur.shapes, annotations: [...cur.annotations, ann] }, drawingsVisible: true });
+  },
+  clearDrawings: () => set({ drawings: { shapes: [], annotations: [] } }),
+  toggleDrawings: () => set({ drawingsVisible: !get().drawingsVisible }),
+
   // Plot data
   traces: [],
   setTraces: (traces) => set({ traces }),
@@ -328,7 +371,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       y2Columns: data.plot_settings?.y2_columns || [],
     };
     if (data.plot_style) {
-      update.plotStyle = { ...DEFAULT_STYLE, ...data.plot_style };
+      // Drawings ride inside plot_style (backend stores it as an opaque dict) —
+      // extract them into their own slice and keep plotStyle clean.
+      const { drawings, ...styleRest } = data.plot_style as StyleSettings & { drawings?: PlotDrawings };
+      update.plotStyle = { ...DEFAULT_STYLE, ...styleRest };
+      update.drawings = drawings && Array.isArray(drawings.shapes)
+        ? { shapes: drawings.shapes, annotations: drawings.annotations || [] }
+        : { shapes: [], annotations: [] };
     }
     if (data.processing) {
       update.processing = { ...DEFAULT_PROCESSING, ...data.processing };

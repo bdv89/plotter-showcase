@@ -83,10 +83,12 @@ function App() {
 
   // Build the .db bytes from the current session (backend serializes to SQLite).
   const getPoolBlob = () => {
-    const { files, fileStyles, extractedColumns, plotStyle, processing, xColumn, yColumns, y2Columns } = useAppStore.getState();
+    const { files, fileStyles, extractedColumns, plotStyle, drawings, processing, xColumn, yColumns, y2Columns } = useAppStore.getState();
     return exportPool({
       files, styles: fileStyles, extracted: extractedColumns,
-      plot_style: plotStyle, processing,
+      // Drawings ride inside plot_style (backend keeps it as an opaque dict).
+      plot_style: { ...plotStyle, drawings } as typeof plotStyle,
+      processing,
       x_column: xColumn, y_columns: yColumns, y2_columns: y2Columns,
     });
   };

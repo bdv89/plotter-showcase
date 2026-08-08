@@ -1,5 +1,6 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import Plot from 'react-plotly.js';
+import Plotly from 'plotly.js';
 import { useAppStore } from '../store/appStore';
 import { PlotSettings, type SettingsSection } from './PlotSettings';
 import type { Data, Layout, Config, Dash, PlotMouseEvent } from 'plotly.js';
@@ -88,6 +89,14 @@ export function PlotView() {
   const fileStyles = useAppStore(s => s.fileStyles);
   const setFileStyle = useAppStore(s => s.setFileStyle);
   const setPlotStyle = useAppStore(s => s.setPlotStyle);
+  const drawings = useAppStore(s => s.drawings);
+  const drawingsVisible = useAppStore(s => s.drawingsVisible);
+  const setDrawings = useAppStore(s => s.setDrawings);
+  const addAnnotation = useAppStore(s => s.addAnnotation);
+  const clearDrawings = useAppStore(s => s.clearDrawings);
+  const toggleDrawings = useAppStore(s => s.toggleDrawings);
+  const drawColor = useAppStore(s => s.drawColor);
+  const setDrawColor = useAppStore(s => s.setDrawColor);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; zone: Zone } | null>(null);
   const [selectedCurve, setSelectedCurve] = useState<{ fileId: string; clickX: number; clickY: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -281,14 +290,28 @@ export function PlotView() {
       };
     }
 
+    // Drawing overlay (single layer above the data) — re-injected from the store
+    // so shapes/annotations survive re-plots; hidden when the layer is toggled off.
+    // newshape sets the color of freshly drawn rect/line (Plotly draw tools).
+    // (newshape isn't in the installed Plotly types → set via a narrow cast.)
+    (l as { newshape?: unknown }).newshape = { line: { color: drawColor, width: 2 } };
+    if (drawingsVisible) {
+      if (drawings.shapes.length) l.shapes = drawings.shapes as Layout['shapes'];
+      if (drawings.annotations.length) l.annotations = drawings.annotations as Layout['annotations'];
+    }
+
     return l;
-  }, [plotStyle, hasY2, traces]);
+  }, [plotStyle, hasY2, traces, drawings, drawingsVisible, drawColor]);
 
   const config: Partial<Config> = useMemo(() => ({
     responsive: true,
     displaylogo: false,
     modeBarButtonsToRemove: ['lasso2d', 'select2d'] as never[],
-    edits: { titleText: true, axisTitleText: true },
+    // Native draw tools: rectangle/square, line, and erase (shapes are editable).
+    modeBarButtonsToAdd: ['drawrect', 'drawline', 'eraseshape'] as never[],
+    // Allow moving shapes and dragging/editing annotations (arrow/text), but not
+    // the rest of the figure.
+    edits: { titleText: true, axisTitleText: true, shapePosition: true, annotationPosition: true, annotationText: true },
   }), []);
 
   // Sync Plotly inline edits back to store
@@ -299,7 +322,21 @@ export function PlotView() {
     if ('yaxis.title.text' in update) style.y_axis_title = update['yaxis.title.text'] as string;
     if ('yaxis2.title.text' in update) style.y2_axis_title = update['yaxis2.title.text'] as string;
     if (Object.keys(style).length > 0) setPlotStyle(style);
-  }, [setPlotStyle]);
+
+    // Capture drawings after any shape/annotation add/move/resize/erase: read the
+    // full arrays off the graph div and persist them to the store.
+    if (Object.keys(update).some(k => k.startsWith('shapes') || k.startsWith('annotations'))) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gd = containerRef.current?.querySelector('.js-plotly-plot') as any;
+      const l = gd?.layout;
+      if (l) {
+        setDrawings({
+          shapes: Array.isArray(l.shapes) ? [...l.shapes] : [],
+          annotations: Array.isArray(l.annotations) ? [...l.annotations] : [],
+        });
+      }
+    }
+  }, [setPlotStyle, setDrawings]);
 
   // Click on curve → show popup
   const handleClick = useCallback((event: Readonly<PlotMouseEvent>) => {
@@ -336,16 +373,19 @@ export function PlotView() {
     setContextMenu(null);
   }, []);
 
-  const handleExportPNG = useCallback(() => {
+  // SVG is vector (resolution-independent); PNG gets a 4× pixel scale for print.
+  // NB: call Plotly.downloadImage directly — window.Plotly is NOT set by the ESM
+  // build of react-plotly.js, so the old `window.Plotly?.` was a silent no-op.
+  const exportImage = useCallback((format: 'svg' | 'png') => {
     const plotEl = containerRef.current?.querySelector('.js-plotly-plot') as HTMLElement | null;
     if (plotEl) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).Plotly?.downloadImage(plotEl, {
-        format: 'png',
+      Plotly.downloadImage(plotEl, {
+        format,
         width: plotStyle.plot_width,
         height: plotStyle.plot_height,
+        ...(format === 'png' ? { scale: 4 } : {}),
         filename: 'plot',
-      });
+      }).catch((err: unknown) => console.error('Export failed:', err));
     }
     setContextMenu(null);
   }, [plotStyle.plot_width, plotStyle.plot_height]);
@@ -354,6 +394,21 @@ export function PlotView() {
     useAppStore.getState().setPlotStyle({ x_auto: true, y_auto: true, y2_auto: true });
     setContextMenu(null);
   }, []);
+
+  // Add an arrow / text annotation at the center; user then drags/edits it in place.
+  const addArrow = useCallback(() => {
+    addAnnotation({
+      xref: 'paper', yref: 'paper', x: 0.5, y: 0.5,
+      ax: -60, ay: -60, axref: 'pixel', ayref: 'pixel',
+      showarrow: true, arrowhead: 2, arrowwidth: 2, arrowcolor: drawColor, text: '',
+    });
+  }, [addAnnotation, drawColor]);
+  const addText = useCallback(() => {
+    addAnnotation({
+      xref: 'paper', yref: 'paper', x: 0.5, y: 0.5,
+      showarrow: false, text: 'Texte', font: { color: drawColor, size: 16 },
+    });
+  }, [addAnnotation, drawColor]);
 
   const curveStyle = selectedCurve ? fileStyles[selectedCurve.fileId] : null;
 
@@ -378,6 +433,30 @@ export function PlotView() {
         &#9881;
       </button>
 
+      {/* Drawing toolbar — rect/line/erase live in Plotly's modebar; here: arrow,
+          text, layer show/hide, clear, and export. */}
+      <div className="draw-toolbar">
+        <input
+          type="color"
+          value={drawColor}
+          onChange={e => setDrawColor(e.target.value)}
+          title="Drawing color (recolors the whole layer)"
+        />
+        <button onClick={addArrow} title="Add arrow">↗ Arrow</button>
+        <button onClick={addText} title="Add text">T Text</button>
+        <button
+          onClick={toggleDrawings}
+          className={drawingsVisible ? '' : 'off'}
+          title={drawingsVisible ? 'Hide drawings' : 'Show drawings'}
+        >
+          {drawingsVisible ? 'Layer ✓' : 'Layer ✕'}
+        </button>
+        <button onClick={clearDrawings} title="Clear all drawings">Clear</button>
+        <span className="draw-sep" />
+        <button onClick={() => exportImage('svg')} title="Export vector SVG">SVG</button>
+        <button onClick={() => exportImage('png')} title="Export PNG ×4">PNG</button>
+      </div>
+
       <Plot
         data={data}
         layout={layout}
@@ -400,7 +479,8 @@ export function PlotView() {
             </>
           )}
           <button onClick={handleToggleGrid}>Toggle Grid</button>
-          <button onClick={handleExportPNG}>Export PNG</button>
+          <button onClick={() => exportImage('svg')}>Export SVG</button>
+          <button onClick={() => exportImage('png')}>Export PNG (×4)</button>
           <button onClick={handleZoomFit}>Zoom Fit</button>
           <div className="context-menu-sep" />
           <button onClick={() => openSettings(null)}>Plot Settings…</button>

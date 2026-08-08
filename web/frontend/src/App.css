@@ -674,6 +674,7 @@ input[type="checkbox"] {
 /* ======= PlotView ======= */
 
 .plot-view {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -778,6 +779,42 @@ input[type="checkbox"] {
 
 .settings-toggle:hover {
   opacity: 1;
+}
+
+.draw-toolbar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  opacity: 0.85;
+}
+
+.draw-toolbar:hover {
+  opacity: 1;
+}
+
+.draw-toolbar button {
+  font-size: 11px;
+  padding: 3px 7px;
+}
+
+.draw-toolbar button.off {
+  color: var(--text-dim);
+  border-style: dashed;
+}
+
+.draw-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 2px;
 }
 
 .settings-popup {
