@@ -339,16 +339,18 @@ export function PlotView() {
     // Everything it offered (zoom/pan/reset, rect/line, erase, export) lives in
     // our own .draw-toolbar above the plot instead.
     displayModeBar: false,
-    // Allow moving shapes and dragging/editing annotations (arrow/text), but not
-    // the rest of the figure.
-    //
-    // titleText MUST stay false: Plotly (≥2.34) always draws a subtitle element
-    // under the main title, and when the title is editable it fills the empty one
-    // with the grey "Click to enter Plot subtitle" placeholder — an unwanted
-    // second line on every plot. Not editable ⇒ empty subtitle ⇒ opacity 0.
-    // Same reason the "Click to enter Plot title" ghost disappears.
-    // The title is still fully editable in PlotSettings (section Title).
-    edits: { titleText: false, axisTitleText: true, shapePosition: true, annotationPosition: true, annotationText: true },
+    // Click-to-edit the main title and the axis titles (same switch, one key
+    // each), plus moving shapes and dragging/editing annotations — but not the
+    // rest of the figure.
+    edits: { titleText: true, axisTitleText: true, shapePosition: true, annotationPosition: true, annotationText: true },
+    // Blanks the subtitle placeholder. Plotly (≥2.34) attaches an editable
+    // subtitle to every editable title and reveals it on hover with the grey
+    // "Click to enter Plot subtitle" — a ghost second line appearing exactly
+    // when you reach for the title. localize() does `if(out) return out`, so an
+    // empty string falls back to the key: a single space is the way to void it.
+    // Key 'en': the default locale is 'en-US', whose base 'en' is checked as a
+    // fallback (plotly.js src/lib/localize.js).
+    locales: { en: { dictionary: { 'Click to enter Plot subtitle': ' ' } } },
   }), []);
 
   // Sync Plotly inline edits back to store
@@ -400,15 +402,6 @@ export function PlotView() {
     setSettingsOpen(true);
     setContextMenu(null);
   }, []);
-
-  // Plotly's own click-to-edit on the title is off (it drags a ghost subtitle
-  // along — see `edits` in the config above), so we restore the gesture: a click
-  // on the title opens the settings panel focused on the Title section.
-  // Declared after openSettings on purpose — the dep array is read immediately,
-  // so referencing it earlier would hit the temporal dead zone.
-  const handleTitleClick = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.gtitle')) openSettings('title');
-  }, [openSettings]);
 
   const handleToggleGrid = useCallback(() => {
     const store = useAppStore.getState();
@@ -529,7 +522,7 @@ export function PlotView() {
         </button>
       </div>
 
-      <div className="plot-canvas" onClick={handleTitleClick}>
+      <div className="plot-canvas">
         <Plot
           data={data}
           layout={layout}

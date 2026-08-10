@@ -692,10 +692,13 @@ input[type="checkbox"] {
   min-height: 0;
 }
 
-/* Le titre ouvre les reglages au clic (l'edition en place de Plotly est
-   desactivee, elle trainait un sous-titre fantome) — le curseur l'annonce. */
-.plot-canvas .gtitle {
-  cursor: pointer;
+/* Ceinture et bretelles cote sous-titre : l'element existe des que le titre est
+   editable. Il est deja en opacity 0 ; on l'empeche en plus de recevoir le
+   survol (pas de revelation du texte d'invite) et le clic (pas de sous-titre
+   cree par accident). Aucun effet de mise en page : subroutines.js ne lit que
+   le bbox du TITRE pour positionner le sous-titre, jamais l'inverse. */
+.gtitle-subtitle {
+  pointer-events: none;
 }
 
 .plot-view-empty {
