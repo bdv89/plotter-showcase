@@ -64,7 +64,10 @@ if ($LASTEXITCODE -ge 8) {          # robocopy : 0-7 = succès, >=8 = échec
 Write-Host "[2/3] Build frontend beta (base=/plotter-exp/)…" -ForegroundColor Cyan
 Push-Location (Join-Path $BetaWeb 'frontend')
 try {
-    if (-not (Test-Path 'node_modules')) { npm install }
+    # Toujours (pas seulement si node_modules manque) : le dev peut avoir ajouté une dep
+    # depuis la dernière promo → sinon `tsc -b` casse sur un module absent côté beta.
+    npm install
+    if ($LASTEXITCODE -ne 0) { throw "npm install a échoué (code $LASTEXITCODE)." }
     $env:VITE_API_URL = '/plotter-exp/api'
     npm run build -- --base=/plotter-exp/
     if ($LASTEXITCODE -ne 0) { throw "npm run build a échoué (code $LASTEXITCODE)." }
