@@ -338,7 +338,14 @@ export function PlotView() {
     displayModeBar: false,
     // Allow moving shapes and dragging/editing annotations (arrow/text), but not
     // the rest of the figure.
-    edits: { titleText: true, axisTitleText: true, shapePosition: true, annotationPosition: true, annotationText: true },
+    //
+    // titleText MUST stay false: Plotly (≥2.34) always draws a subtitle element
+    // under the main title, and when the title is editable it fills the empty one
+    // with the grey "Click to enter Plot subtitle" placeholder — an unwanted
+    // second line on every plot. Not editable ⇒ empty subtitle ⇒ opacity 0.
+    // Same reason the "Click to enter Plot title" ghost disappears.
+    // The title is still fully editable in PlotSettings (section Title).
+    edits: { titleText: false, axisTitleText: true, shapePosition: true, annotationPosition: true, annotationText: true },
   }), []);
 
   // Sync Plotly inline edits back to store
