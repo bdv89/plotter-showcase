@@ -246,3 +246,29 @@ Restart-Service CSVPlotter_Exp -Force        # PowerShell admin requis
 > ⚠️ **Piège n°2** (nom de service) : le service exp s'appelle **`CSVPlotter_Exp`**, pas `CSVPlotter`.
 > `Restart-Service CSVPlotter` → *NoServiceFoundForGivenName*. Le bouton du services dashboard doit pointer sur
 > `exp_task_name: CSVPlotter_Exp` (cf. §6) ; sinon son redémarrage échoue avec cette même erreur.
+
+> ⚠️ **Piège n°3** (dépendances de la copie) : `promote-dev-to-beta.ps1` lance désormais `npm install` **systématiquement** avant le build.
+> Auparavant il ne le faisait que si `node_modules` était **absent** : une dépendance ajoutée côté dev depuis la dernière promo n'était jamais
+> installée côté beta et `tsc -b` cassait (vécu avec `vitest` : `error TS2307: Cannot find module 'vitest'`). `npm install` prend ~1 s quand rien
+> ne change — le garder inconditionnel.
+
+### ⚠️ Un uvicorn dev peut squatter le port de la prod
+
+`start-plotter.ps1` (dev only) lance `uvicorn --reload --host 0.0.0.0 --port 9099` — **le port de la prod**. S'il tourne encore, le service NSSM
+`CSVPlotter` ne peut pas prendre le port : il affiche `Running` mais c'est le processus **dev** qui sert `/plotter/api`, avec `--reload`, bindé sur
+le LAN au lieu de `127.0.0.1`, et **sans les variables d'environnement du service** (donc les sessions atterrissent sous `/tmp/csv-plotter-uploads`
+au lieu de `C:\ProgramData\Plotter\uploads`).
+
+Diagnostic — comparer le `upload_dir` renvoyé par le health à celui attendu, puis identifier le propriétaire du port :
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:9099/api/health'      # upload_dir doit être C:\ProgramData\Plotter\uploads
+$c = Get-NetTCPConnection -LocalPort 9099 -State Listen
+Get-CimInstance Win32_Process -Filter "ProcessId = $($c.OwningProcess)" | Select-Object CommandLine
+```
+Une ligne contenant `--reload` = c'est le dev. Le tuer demande **deux passes** : `uvicorn --reload` a un worker `multiprocessing` qui **hérite de la
+socket d'écoute** du parent, donc la table TCP continue d'afficher le PID du parent mort tant que l'enfant vit.
+```powershell
+taskkill /PID <pid_parent> /T /F
+taskkill /PID <pid_worker> /T /F     # celui dont la CommandLine contient spawn_main(parent_pid=<pid_parent>)
+Start-Service CSVPlotter
+```

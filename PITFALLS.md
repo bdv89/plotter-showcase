@@ -853,3 +853,45 @@ Le chemin n'a pas de `.d.ts` → déclaration dans `src/vite-env.d.ts` (`declare
 (Get-Content dist\assets\index-*.js -TotalCount 1).Substring(0,200)   # doit commencer par "(function(){", pas par "import … from"
 ```
 Et plus généralement : **un test en dev ne vaut pas un test du build de prod** — Vite dev et Rollup ne résolvent pas les deps de la même façon. Voir la section « Calque de dessin » de [CLAUDE.md](CLAUDE.md).
+
+---
+
+## Sous-titre fantôme : `edits.titleText: false` casse aussi l'édition du titre
+
+> ✅ **FIXED** (2026-08-10) : un « sous-titre » gris apparaissait sous le titre du graphe. Le désactiver via `edits.titleText: false` l'a bien supprimé — **et a supprimé l'édition du titre au clic** au passage. Symptôme rapporté : « titres des axes OK, titre principal KO ».
+
+**Cause** (`plotly.js` ≥ 2.34, vérifié dans `src/components/titles/index.js` de la 2.35.3) :
+
+```js
+if(prop === 'title.text')          editAttr = 'titleText';
+else if(prop.indexOf('axis') !== -1) editAttr = 'axisTitleText';
+var editable = gd._context.edits[editAttr];        // ligne 106
+// ligne 101 : "Subtitle is editable if and only if title is editable"
+```
+
+`titleText` est **le même interrupteur** que `axisTitleText` pour les axes. Le passer à `false` fait deux choses d'un coup : plus de sous-titre, plus d'édition en place. D'où l'asymétrie constatée entre axes et titre.
+
+**Ce que le « sous-titre » est réellement** : pas une ligne permanente. Le sous-titre vide est transparent (`if(subtitleTxt === '') subtitleOpacity = 0`, ligne 125), puis `setPlaceholder` (lignes 344-350) lui pose le texte *« Click to enter Plot subtitle »* et un `mouseover → opacity 1`. Il se révèle donc **au survol**, c'est-à-dire pile quand on approche la souris du titre pour le cliquer.
+
+**Solution** — neutraliser le sous-titre **sans** toucher à `editable` :
+
+```ts
+// PlotView.tsx — config
+edits: { titleText: true, axisTitleText: true, /* … */ },
+locales: { en: { dictionary: { 'Click to enter Plot subtitle': ' ' } } },
+```
+```css
+/* App.css */
+.gtitle-subtitle { pointer-events: none; }
+```
+
+- **`locales`** est un réglage **public** (`src/plot_api/plot_config.js:450`), typé dans `@types/plotly.js:2533` → aucun cast. ⚠️ **Un espace, pas une chaîne vide** : `src/lib/localize.js` fait `var out = dict[s]; if(out) return out;` — `''` est falsy et retombe sur la clé d'origine, `' '` passe.
+- Clé **`en`** : la locale par défaut est `en-US`, dont la base `en` est consultée en repli.
+- **`pointer-events: none`** en ceinture et bretelles : l'élément (déjà en `opacity 0`) ne reçoit plus ni survol (pas de révélation) ni clic (pas de sous-titre créé par mégarde). **Aucun effet de mise en page** : `src/plot_api/subroutines.js:460` lit le bbox du **titre** pour positionner le sous-titre, jamais l'inverse.
+
+**Ne pas** tenter à la place :
+- `dictionary: { … : '' }` → falsy, sans effet (cf. ci-dessus).
+- Masquer en CSS le seul `.gtitle-subtitle` en `display:none` sans le dictionnaire → le texte d'invite reste **dans le DOM**, donc dans le SVG exporté (`tosvg.js` ne lit que le style **inline**, pas nos règles CSS).
+- Un contournement maison « clic sur le titre → ouvre le panneau de réglages » : il entre en **conflit** avec l'édition en place une fois `titleText` réactivé (les deux se déclenchent sur le même clic).
+
+**Prevention** : avant de désactiver un `config.edits.*` pour faire disparaître un élément, vérifier ce que cet interrupteur commande **d'autre** — dans Plotly un même flag couvre souvent le titre et ses satellites. Le réflexe utile : `node_modules/plotly.js/src/` est livré en clair, bien plus lisible que le `dist/` minifié.
