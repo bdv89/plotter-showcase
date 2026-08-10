@@ -692,6 +692,12 @@ input[type="checkbox"] {
   min-height: 0;
 }
 
+/* Le titre ouvre les reglages au clic (l'edition en place de Plotly est
+   desactivee, elle trainait un sous-titre fantome) — le curseur l'annonce. */
+.plot-canvas .gtitle {
+  cursor: pointer;
+}
+
 .plot-view-empty {
   width: 100%;
   height: 100%;

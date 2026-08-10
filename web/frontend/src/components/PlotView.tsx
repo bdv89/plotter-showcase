@@ -10,7 +10,7 @@ import { useAppStore } from '../store/appStore';
 import { PlotSettings, type SettingsSection } from './PlotSettings';
 import type { Data, Layout, Config, Dash, PlotMouseEvent } from 'plotly.js';
 
-type Zone = 'legend' | 'xaxis' | 'yaxis' | 'y2axis' | 'plot';
+type Zone = 'title' | 'legend' | 'xaxis' | 'yaxis' | 'y2axis' | 'plot';
 
 // What dragging on the plot does. Same values Plotly's modebar would set on
 // layout.dragmode — we drive it from our own toolbar instead (modebar hidden).
@@ -28,6 +28,8 @@ const DRAG_MODES: { mode: DragMode; label: string; title: string }[] = [
 // titles — instead we compare the cursor to the plotting-area box: below it = X
 // axis, left = Y axis, right = Y2 axis. Legend is matched by its own SVG group.
 function classifyZone(e: React.MouseEvent, container: HTMLElement | null, hasY2: boolean): Zone {
+  // Plotly draws the main title as <text class="gtitle"> in .g-gtitle.
+  if ((e.target as HTMLElement).closest('.gtitle')) return 'title';
   if ((e.target as HTMLElement).closest('.legend')) return 'legend';
   const area = container?.querySelector('.nsewdrag');
   const r = area?.getBoundingClientRect();
@@ -39,6 +41,7 @@ function classifyZone(e: React.MouseEvent, container: HTMLElement | null, hasY2:
 }
 
 const ZONE_LABEL: Record<Exclude<Zone, 'plot'>, string> = {
+  title: 'Title settings…',
   legend: 'Legend settings…',
   xaxis: 'X-axis settings…',
   yaxis: 'Y-axis settings…',
@@ -398,6 +401,15 @@ export function PlotView() {
     setContextMenu(null);
   }, []);
 
+  // Plotly's own click-to-edit on the title is off (it drags a ghost subtitle
+  // along — see `edits` in the config above), so we restore the gesture: a click
+  // on the title opens the settings panel focused on the Title section.
+  // Declared after openSettings on purpose — the dep array is read immediately,
+  // so referencing it earlier would hit the temporal dead zone.
+  const handleTitleClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.gtitle')) openSettings('title');
+  }, [openSettings]);
+
   const handleToggleGrid = useCallback(() => {
     const store = useAppStore.getState();
     store.setPlotStyle({
@@ -517,7 +529,7 @@ export function PlotView() {
         </button>
       </div>
 
-      <div className="plot-canvas">
+      <div className="plot-canvas" onClick={handleTitleClick}>
         <Plot
           data={data}
           layout={layout}
