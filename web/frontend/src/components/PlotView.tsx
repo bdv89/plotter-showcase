@@ -12,6 +12,17 @@ import type { Data, Layout, Config, Dash, PlotMouseEvent } from 'plotly.js';
 
 type Zone = 'legend' | 'xaxis' | 'yaxis' | 'y2axis' | 'plot';
 
+// What dragging on the plot does. Same values Plotly's modebar would set on
+// layout.dragmode — we drive it from our own toolbar instead (modebar hidden).
+type DragMode = 'zoom' | 'pan' | 'drawrect' | 'drawline';
+
+const DRAG_MODES: { mode: DragMode; label: string; title: string }[] = [
+  { mode: 'zoom', label: '⌕ Zoom', title: 'Drag to zoom into a region' },
+  { mode: 'pan', label: '✋ Pan', title: 'Drag to move the plot' },
+  { mode: 'drawrect', label: '▭ Rect', title: 'Drag to draw a rectangle' },
+  { mode: 'drawline', label: '╱ Line', title: 'Drag to draw a line' },
+];
+
 // Classify a right-click into a plot zone. Plotly covers the plotting area with
 // an invisible drag layer (.nsewdrag), so DOM classes only work on the axis
 // titles — instead we compare the cursor to the plotting-area box: below it = X
@@ -106,7 +117,15 @@ export function PlotView() {
   const [selectedCurve, setSelectedCurve] = useState<{ fileId: string; clickX: number; clickY: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsFocus, setSettingsFocus] = useState<SettingsSection | null>(null);
+  // Replaces Plotly's modebar (hidden): what the mouse does on the plot.
+  const [dragMode, setDragMode] = useState<DragMode>('zoom');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // The Plotly graph div — everything Plotly-imperative goes through it.
+  const graphDiv = useCallback(
+    () => containerRef.current?.querySelector('.js-plotly-plot') as HTMLElement | null,
+    [],
+  );
 
   // Close context menu and curve popup on outside click
   useEffect(() => {
@@ -305,15 +324,18 @@ export function PlotView() {
       if (drawings.annotations.length) l.annotations = drawings.annotations as Layout['annotations'];
     }
 
+    // Driven by our toolbar since Plotly's modebar is hidden.
+    l.dragmode = dragMode as Layout['dragmode'];
+
     return l;
-  }, [plotStyle, hasY2, traces, drawings, drawingsVisible, drawColor]);
+  }, [plotStyle, hasY2, traces, drawings, drawingsVisible, drawColor, dragMode]);
 
   const config: Partial<Config> = useMemo(() => ({
     responsive: true,
-    displaylogo: false,
-    modeBarButtonsToRemove: ['lasso2d', 'select2d'] as never[],
-    // Native draw tools: rectangle/square, line, and erase (shapes are editable).
-    modeBarButtonsToAdd: ['drawrect', 'drawline', 'eraseshape'] as never[],
+    // Modebar hidden: it floats over the top-right of the plot and hides data.
+    // Everything it offered (zoom/pan/reset, rect/line, erase, export) lives in
+    // our own .draw-toolbar above the plot instead.
+    displayModeBar: false,
     // Allow moving shapes and dragging/editing annotations (arrow/text), but not
     // the rest of the figure.
     edits: { titleText: true, axisTitleText: true, shapePosition: true, annotationPosition: true, annotationText: true },
@@ -382,7 +404,7 @@ export function PlotView() {
   // NB: call Plotly.downloadImage directly — window.Plotly is NOT set by the ESM
   // build of react-plotly.js, so the old `window.Plotly?.` was a silent no-op.
   const exportImage = useCallback((format: 'svg' | 'png') => {
-    const plotEl = containerRef.current?.querySelector('.js-plotly-plot') as HTMLElement | null;
+    const plotEl = graphDiv();
     if (plotEl) {
       Plotly.downloadImage(plotEl, {
         format,
@@ -393,7 +415,21 @@ export function PlotView() {
       }).catch((err: unknown) => console.error('Export failed:', err));
     }
     setContextMenu(null);
-  }, [plotStyle.plot_width, plotStyle.plot_height]);
+  }, [graphDiv, plotStyle.plot_width, plotStyle.plot_height]);
+
+  // Replaces the modebar's eraser: drop the shape the user last clicked on.
+  // Plotly tracks it in _fullLayout._activeShapeIndex (same field its own eraser
+  // reads); with nothing selected, fall back to the most recently drawn shape.
+  // The resulting relayout fires onRelayout, which re-captures into the store.
+  const eraseShape = useCallback(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gd = graphDiv() as any;
+    const shapes = [...(gd?.layout?.shapes ?? [])];
+    if (!shapes.length) return;
+    const active = gd._fullLayout?._activeShapeIndex;
+    shapes.splice(typeof active === 'number' && active >= 0 ? active : shapes.length - 1, 1);
+    Plotly.relayout(gd, { shapes });
+  }, [graphDiv]);
 
   const handleZoomFit = useCallback(() => {
     useAppStore.getState().setPlotStyle({ x_auto: true, y_auto: true, y2_auto: true });
@@ -429,11 +465,22 @@ export function PlotView() {
 
   return (
     <div className="plot-view" ref={containerRef} onContextMenu={handleContextMenu}>
-      {/* Toolbar ABOVE the plotting area, never on top of it: it used to be
-          absolutely positioned and hid the top-left corner of the data.
-          Rect/line/erase live in Plotly's modebar; here: arrow, text, layer
-          show/hide, clear, export, and the settings gear (pushed right). */}
+      {/* The one toolbar, ABOVE the plotting area and never on top of it — both
+          this bar and Plotly's modebar used to float over the data. Holds every
+          control: mouse mode, drawing, layer, export, settings. */}
       <div className="draw-toolbar">
+        {DRAG_MODES.map(({ mode, label, title }) => (
+          <button
+            key={mode}
+            onClick={() => setDragMode(mode)}
+            className={dragMode === mode ? 'on' : ''}
+            title={title}
+          >
+            {label}
+          </button>
+        ))}
+        <button onClick={handleZoomFit} title="Reset axes to auto scale">⤢ Fit</button>
+        <span className="draw-sep" />
         <input
           type="color"
           value={drawColor}
@@ -442,6 +489,7 @@ export function PlotView() {
         />
         <button onClick={addArrow} title="Add arrow">↗ Arrow</button>
         <button onClick={addText} title="Add text">T Text</button>
+        <button onClick={eraseShape} title="Erase the selected shape (or the last one drawn)">⌫ Erase</button>
         <button
           onClick={toggleDrawings}
           className={drawingsVisible ? '' : 'off'}

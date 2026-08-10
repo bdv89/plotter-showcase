@@ -808,6 +808,14 @@ input[type="checkbox"] {
   border-style: dashed;
 }
 
+/* Mode souris actif (zoom/pan/rect/ligne) — remplace l'etat actif de la
+   modebar Plotly, qui est masquee. */
+.draw-toolbar button.on {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
 .draw-sep {
   width: 1px;
   height: 18px;
