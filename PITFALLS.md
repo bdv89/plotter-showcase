@@ -819,3 +819,37 @@ self.lock = threading.Lock()  # PAS RLock : release peut arriver sur un autre th
 ```
 
 **Prevention**: ne jamais tenir un `threading.RLock` à cheval sur le `yield` d'une dépendance FastAPI sync (acquire/release peuvent changer de thread). Utiliser un `threading.Lock` (tolère le release cross-thread) tant qu'il n'y a pas de ré-entrance, ou verrouiller **à l'intérieur** de chaque handler plutôt qu'autour du yield. Un `RLock` qui échoue au release reste verrouillé → gel garanti de la session.
+
+---
+
+## Page blanche en prod : `import Plotly from 'plotly.js'` laisse un import nu dans le bundle
+
+> ✅ **FIXED** (2026-08-10) : après le déploiement du calque de dessin, `/plotter/` affichait **le fond et rien d'autre**. Aucune erreur serveur : le JS partait en `200` (9,9 Mo) et n'était simplement jamais exécuté.
+
+**Cause** (`components/PlotView.tsx`) : le fix « export SVG/PNG » importait Plotly par son entrée **source** :
+```ts
+import Plotly from 'plotly.js';          // ❌ entrée source
+```
+`react-plotly.js` charge en interne le bundle **pré-compilé** (`require('plotly.js/dist/plotly')`). Importer l'entrée source ajoute donc **une deuxième copie** de Plotly ET tout son graphe de modules Node (`typedarray-pool`→`buffer`, `probe-image-size`→`stream`, `stream-parser`→`assert`). Rollup n'a pas pu résoudre `buffer/` et l'a traité **en dépendance externe** — c'est-à-dire qu'il a laissé un `import` nu en **première instruction du bundle** :
+```js
+import ame from"buffer/";   // le navigateur ne sait pas résoudre un specifier nu
+```
+Un specifier non résolu fait échouer le **chargement du module entier** : React ne monte jamais, la page reste vide. **Invisible en dev** : le serveur Vite pré-bundle les deps avec esbuild et résout ces stubs.
+
+**Symptom** : page vide (fond stylé si le CSS passe encore), aucune erreur backend, JS servi en `200` dans `access.log`. Signature dans la sortie de build :
+```
+"buffer/" is imported by " buffer/?commonjs-external", but could not be resolved – treating it as an external dependency.
+```
+Symptômes annexes du même bug : bundle qui **double de taille** (9,9 Mo vs 5,0) et `1783 modules transformed` au lieu de `59`.
+
+**Solution** : importer le **même** bundle pré-compilé que react-plotly.js → une seule copie, aucun graphe Node.
+```ts
+import Plotly from 'plotly.js/dist/plotly';   // ✅
+```
+Le chemin n'a pas de `.d.ts` → déclaration dans `src/vite-env.d.ts` (`declare module 'plotly.js/dist/plotly'`, réexporte les types de `'plotly.js'`). Les `import type … from 'plotly.js'` restent inchangés (effacés au build). Le CSS bundle passe de 82 ko à 17 ko : les 65 ko étaient le CSS de Plotly, que le bundle `dist` **injecte lui-même au runtime** — comportement d'avant le calque de dessin, rien n'est perdu.
+
+**Prevention** : ne **jamais** ignorer un `could not be resolved – treating it as an external dependency` dans un build navigateur : contrairement aux messages « has been externalized for browser compatibility » (bénins, stubs vides), celui-ci laisse un vrai `import` nu et casse toute la page. Vérification en une commande après build :
+```powershell
+(Get-Content dist\assets\index-*.js -TotalCount 1).Substring(0,200)   # doit commencer par "(function(){", pas par "import … from"
+```
+Et plus généralement : **un test en dev ne vaut pas un test du build de prod** — Vite dev et Rollup ne résolvent pas les deps de la même façon. Voir la section « Calque de dessin » de [CLAUDE.md](CLAUDE.md).

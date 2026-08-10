@@ -1,6 +1,11 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import Plot from 'react-plotly.js';
-import Plotly from 'plotly.js';
+// Le bundle PRÉ-COMPILÉ, pas l'entrée source 'plotly.js' : react-plotly.js charge
+// déjà celui-ci (require('plotly.js/dist/plotly')) → on réutilise la même copie.
+// Importer 'plotly.js' tire son graphe Node (typedarray-pool→buffer, probe-image-size
+// →stream) que Rollup laisse en import nu `import x from "buffer/"` en tête de bundle
+// → le module ne se charge pas → PAGE BLANCHE en prod (invisible en dev).
+import Plotly from 'plotly.js/dist/plotly';
 import { useAppStore } from '../store/appStore';
 import { PlotSettings, type SettingsSection } from './PlotSettings';
 import type { Data, Layout, Config, Dash, PlotMouseEvent } from 'plotly.js';
