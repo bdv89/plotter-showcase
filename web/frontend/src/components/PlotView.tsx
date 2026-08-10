@@ -429,17 +429,10 @@ export function PlotView() {
 
   return (
     <div className="plot-view" ref={containerRef} onContextMenu={handleContextMenu}>
-      {/* Settings gear */}
-      <button
-        className="settings-toggle"
-        onClick={() => settingsOpen ? setSettingsOpen(false) : openSettings(null)}
-        title="Plot settings"
-      >
-        &#9881;
-      </button>
-
-      {/* Drawing toolbar — rect/line/erase live in Plotly's modebar; here: arrow,
-          text, layer show/hide, clear, and export. */}
+      {/* Toolbar ABOVE the plotting area, never on top of it: it used to be
+          absolutely positioned and hid the top-left corner of the data.
+          Rect/line/erase live in Plotly's modebar; here: arrow, text, layer
+          show/hide, clear, export, and the settings gear (pushed right). */}
       <div className="draw-toolbar">
         <input
           type="color"
@@ -460,17 +453,26 @@ export function PlotView() {
         <span className="draw-sep" />
         <button onClick={() => exportImage('svg')} title="Export vector SVG">SVG</button>
         <button onClick={() => exportImage('png')} title="Export PNG ×4">PNG</button>
+        <button
+          className="settings-toggle"
+          onClick={() => settingsOpen ? setSettingsOpen(false) : openSettings(null)}
+          title="Plot settings"
+        >
+          &#9881;
+        </button>
       </div>
 
-      <Plot
-        data={data}
-        layout={layout}
-        config={config}
-        useResizeHandler
-        style={{ width: '100%', height: '100%' }}
-        onRelayout={handleRelayout}
-        onClick={handleClick}
-      />
+      <div className="plot-canvas">
+        <Plot
+          data={data}
+          layout={layout}
+          config={config}
+          useResizeHandler
+          style={{ width: '100%', height: '100%' }}
+          onRelayout={handleRelayout}
+          onClick={handleClick}
+        />
+      </div>
 
       {/* Context menu (right-click) */}
       {contextMenu && (

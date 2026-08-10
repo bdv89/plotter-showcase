@@ -682,8 +682,14 @@ input[type="checkbox"] {
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;   /* barre de dessin en haut, graphe en dessous */
+}
+
+/* Le graphe occupe tout ce qui reste sous la barre. min-height:0 sinon un flex
+   item refuse de passer sous sa taille de contenu et deborde vers le bas. */
+.plot-canvas {
+  flex: 1;
+  min-height: 0;
 }
 
 .plot-view-empty {
@@ -766,42 +772,30 @@ input[type="checkbox"] {
 
 /* ======= Settings Toggle ======= */
 
+/* Dans la barre de dessin, poussee a droite (etait en absolute sur le graphe). */
 .settings-toggle {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 10;
+  margin-left: auto;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 18px;
-  padding: 4px 8px;
+  font-size: 15px;
+  padding: 2px 8px;
   cursor: pointer;
-  opacity: 0.6;
-  transition: opacity 0.15s;
 }
 
-.settings-toggle:hover {
-  opacity: 1;
-}
-
+/* Dans le flux, AU-DESSUS du graphe — surtout pas en absolute par-dessus les
+   donnees : la barre masquait le coin haut-gauche du trace. */
 .draw-toolbar {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 10;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
+  margin-bottom: 6px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  opacity: 0.85;
-}
-
-.draw-toolbar:hover {
-  opacity: 1;
 }
 
 .draw-toolbar button {
