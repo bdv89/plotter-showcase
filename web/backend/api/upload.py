@@ -115,10 +115,11 @@ def delete_file(file_id: str, state: AppState = Depends(get_session)):
         print(f"🟡 Deleted file from disk: {file_path}")
 
     del state.files[file_id]
-    state.processed_cache.pop(file_id, None)
     state.styles.pop(file_id, None)
-    state.processing_settings.pop(file_id, None)
     state.extracted_columns.pop(file_id, None)
+    # Cache keys are "<file_id>|<settings>|<cols>|<x>" → drop every variant.
+    for key in [k for k in state.processed_cache if k.startswith(f"{file_id}|")]:
+        del state.processed_cache[key]
 
     manager.persist(state.sid)
     print(f"✅ Deleted file: {file_id}")

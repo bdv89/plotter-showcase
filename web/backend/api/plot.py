@@ -1,5 +1,6 @@
 """Plot data endpoints - returns trace data for Plotly.js."""
 
+from core.processing import apply_processing_cached
 from fastapi import APIRouter, Depends
 from models.schemas import PlotDataResponse, PlotRequest, PlotTrace
 from sessions import get_session
@@ -13,7 +14,7 @@ def get_plot_data(req: PlotRequest, state: AppState = Depends(get_session)):
     """Return x/y arrays for Plotly.js traces.
 
     For each file_id + y_column combination, return a trace with x, y, name, yaxis.
-    Uses processed data if available in cache, otherwise raw data.
+    Processing (req.processing) is applied here, to the y/y2 columns only.
     """
     print(f"🟢 Plot data request: {len(req.file_ids)} files, "
           f"{len(req.y_columns)} y-cols, {len(req.y2_columns)} y2-cols")
@@ -25,12 +26,13 @@ def get_plot_data(req: PlotRequest, state: AppState = Depends(get_session)):
             print(f"⚠️ File '{file_id}' not found, skipping")
             continue
 
-        # Use processed data if available, otherwise raw
-        if file_id in state.processed_cache:
-            df = state.processed_cache[file_id]
-            print(f"🟡 Using processed data for {file_id}")
-        else:
-            df = state.files[file_id]['data']
+        df = state.files[file_id]['data']
+
+        # Process the plotted y/y2 columns only — never x.
+        df = apply_processing_cached(
+            state, file_id, df, req.processing,
+            req.y_columns + req.y2_columns, req.x_column,
+        )
 
         # Check x column exists
         if req.x_column not in df.columns:

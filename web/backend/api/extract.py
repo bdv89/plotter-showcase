@@ -1,6 +1,7 @@
 """Extraction endpoints - compute statistical metrics from data."""
 
 from core.extraction import OPERATIONS, compute_extraction
+from core.processing import apply_processing_cached
 from fastapi import APIRouter, Depends, HTTPException
 from models.schemas import ExtractRemoveRequest, ExtractRequest
 from sessions import get_session, manager
@@ -17,11 +18,11 @@ def extract_single(req: ExtractRequest, state: AppState = Depends(get_session)):
     if req.file_id not in state.files:
         raise HTTPException(status_code=404, detail=f"File '{req.file_id}' not found")
 
-    # Use processed data if available
-    if req.file_id in state.processed_cache:
-        df = state.processed_cache[req.file_id]
-    else:
-        df = state.files[req.file_id]['data']
+    # Extract from the same data the user sees plotted.
+    df = apply_processing_cached(
+        state, req.file_id, state.files[req.file_id]['data'],
+        req.processing, [req.column], req.x_column or "",
+    )
 
     result = compute_extraction(
         df=df,
@@ -77,11 +78,10 @@ def extract_preview(req: ExtractRequest, state: AppState = Depends(get_session))
             results.append({"file_id": file_id, "value": None, "error": "File not found"})
             continue
 
-        # Use processed data if available
-        if file_id in state.processed_cache:
-            df = state.processed_cache[file_id]
-        else:
-            df = state.files[file_id]['data']
+        df = apply_processing_cached(
+            state, file_id, state.files[file_id]['data'],
+            req.processing, [req.column], req.x_column or "",
+        )
 
         value = compute_extraction(
             df=df,

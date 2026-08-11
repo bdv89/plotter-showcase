@@ -30,6 +30,12 @@ def _validate_data(data: Union[np.ndarray, pd.Series]) -> np.ndarray:
     else:
         arr = np.asarray(data)
 
+    # pandas copy-on-write hands back READ-ONLY views. pywt writes into its input
+    # buffer → "buffer source array is read-only", caught per column, so wavelet
+    # silently did nothing. Copy when needed (one column, cheap).
+    if not arr.flags.writeable:
+        arr = arr.copy()
+
     if len(arr) == 0:
         raise ValueError("Input data is empty")
 

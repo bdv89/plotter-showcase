@@ -18,6 +18,10 @@ class PlotRequest(BaseModel):
     x_column: str
     y_columns: list[str]
     y2_columns: list[str] = []
+    # Session-wide ProcessingSettings, applied inline when building the traces.
+    # A field the frontend sends but that is NOT declared here is dropped
+    # silently by Pydantic — that is how processing used to be ignored.
+    processing: dict = {}
 
 
 class PlotTrace(BaseModel):
@@ -32,15 +36,11 @@ class PlotDataResponse(BaseModel):
     traces: list[PlotTrace] = []
 
 
-class ProcessRequest(BaseModel):
-    file_id: str
-    settings: dict = {}
-
-
 class ExtractRequest(BaseModel):
     file_id: str
     column: str
     operation: str
+    processing: dict = {}  # same settings as PlotRequest: extract what is plotted
     x_column: Optional[str] = None
     x_value: Optional[float] = None
     x_min: Optional[float] = None  # borne basse de l'intervalle X (filtre optionnel)

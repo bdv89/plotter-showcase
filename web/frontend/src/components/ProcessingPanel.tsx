@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
-import { getPlotData, processFile } from '../api/client';
 import type { ProcessingSettings } from '../types';
 import Plot from 'react-plotly.js';
 
@@ -33,40 +32,10 @@ export function ProcessingPanel() {
     setProcessing(partial);
   }, [setProcessing]);
 
-  // Live processing: auto-apply when processing settings change
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const processingJson = JSON.stringify(processing);
-
-  useEffect(() => {
-    const { checkedFiles, xColumn, yColumns } = useAppStore.getState();
-    if (checkedFiles.size === 0 || !xColumn || yColumns.length === 0) return;
-
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      const state = useAppStore.getState();
-      const fileIds = Array.from(state.checkedFiles);
-      state.setIsPlotting(true);
-      try {
-        for (const fileId of fileIds) {
-          await processFile(fileId, state.processing);
-        }
-        const result = await getPlotData({
-          file_ids: fileIds,
-          x_column: state.xColumn,
-          y_columns: state.yColumns,
-          y2_columns: state.y2Columns.length > 0 ? state.y2Columns : undefined,
-          styles: state.fileStyles,
-        });
-        state.setTraces(result.traces);
-      } catch (err) {
-        console.error('Processing failed:', err);
-      } finally {
-        useAppStore.getState().setIsPlotting(false);
-      }
-    }, 500);
-
-    return () => clearTimeout(debounceRef.current);
-  }, [processingJson]);
+  // No API call here: `processing` is sent with every /plot-data request
+  // (ColumnSelector's auto-plot watches it), so this panel is pure UI over the
+  // store. The old "process each file, then re-plot" loop wrote into a
+  // server cache keyed on file_id alone → stale as soon as the selection moved.
 
   const handleReset = useCallback(() => {
     resetProcessing();

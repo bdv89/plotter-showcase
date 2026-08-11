@@ -66,7 +66,9 @@ export function ColumnSelector() {
       });
       setTraces(result.traces);
     } catch (err) {
+      // Surface it: a failing processing step used to be console-only.
       console.error('Plot failed:', err);
+      useAppStore.getState().setError(`Plot échoué : ${err instanceof Error ? err.message : err}`);
     } finally {
       setIsPlotting(false);
     }
@@ -74,7 +76,9 @@ export function ColumnSelector() {
 
   const canPlot = checkedFiles.size > 0 && xColumn && yColumns.length > 0;
 
-  // Auto-plot: trigger plot when inputs change.
+  // Auto-plot: trigger plot when inputs change. This is the ONLY place a plot is
+  // requested — `processing` is part of the fingerprint, so changing a setting in
+  // the Process tab re-plots here (all sections stay mounted, only hidden).
   // handlePlot is read through a ref so its identity churn (it depends on
   // fileStyles/processing) doesn't re-run this effect and cancel the pending
   // timer. lastRequestRef is set only when the timer actually fires, so a
@@ -84,14 +88,14 @@ export function ColumnSelector() {
   handlePlotRef.current = handlePlot;
   useEffect(() => {
     if (!autoPlot || !canPlot) return;
-    const fingerprint = JSON.stringify([checkedFilesArr, xColumn, yColumns, y2Columns]);
+    const fingerprint = JSON.stringify([checkedFilesArr, xColumn, yColumns, y2Columns, processing]);
     if (fingerprint === lastRequestRef.current) return;
     const timer = setTimeout(() => {
       lastRequestRef.current = fingerprint;
       handlePlotRef.current();
     }, 300);
     return () => clearTimeout(timer);
-  }, [autoPlot, canPlot, checkedFilesArr, xColumn, yColumns, y2Columns]);
+  }, [autoPlot, canPlot, checkedFilesArr, xColumn, yColumns, y2Columns, processing]);
 
   return (
     <div className="column-selector">

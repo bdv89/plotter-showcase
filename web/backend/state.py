@@ -22,13 +22,22 @@ class AppState:
 
         self.files = {}  # file_id -> {filename, file_path, data (DataFrame), headers, units}
         self.styles = {}  # file_id -> {line_color, line_color_y2, line_style, legend_label}
-        self.processing_settings = {}  # file_id -> settings dict
+        self.processing_settings = {}  # flat, session-wide ProcessingSettings dict
         self.plot_style = {}  # DEFAULT_STYLE_SETTINGS
         self.extracted_columns = {}  # file_id -> {col_name: {value, precision}}
         self.x_column = ""
         self.y_columns = []
         self.y2_columns = []
-        self.processed_cache = OrderedDict()  # file_id -> processed DataFrame (LRU, max 50)
+        # Processed DataFrames (LRU, max 50). Key = file_id + processing settings
+        # + columns (built in core/processing.py) so a stale entry is impossible.
+        self.processed_cache = OrderedDict()
+
+    def cache_get(self, key):
+        """Return a cached processed DataFrame (marking it recently used), or None."""
+        if key not in self.processed_cache:
+            return None
+        self.processed_cache.move_to_end(key)
+        return self.processed_cache[key]
 
     def cache_put(self, key, value):
         """Add to processed_cache with LRU eviction."""

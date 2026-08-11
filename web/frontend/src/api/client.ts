@@ -60,15 +60,6 @@ export async function getPlotData(request: {
   return res.json();
 }
 
-export async function processFile(file_id: string, settings: ProcessingSettings): Promise<void> {
-  const res = await fetch(`${API_BASE}/process`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...sidHeaders() },
-    body: JSON.stringify({ file_id, settings }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-}
-
 export async function extractData(request: {
   file_ids: string[];
   column: string;
@@ -102,6 +93,7 @@ export async function extractData(request: {
           threshold: request.threshold,
           condition_column: request.condition_column,
           operator: request.operator,
+          processing: request.processing,
         }),
       });
       if (res.ok) {
