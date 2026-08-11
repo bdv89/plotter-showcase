@@ -701,7 +701,7 @@ if self._lock_display_size:
 
 **Solution**:
 - `core/denoise_methods.py` (DataFrame loop): skip all-NaN columns; `try/except ValueError` per column → leave it unchanged (covers the short-window case too).
-- `core/../api/process.py` `_baseline()`: skip all-NaN columns + `try/except` per column.
+- `_baseline()`: skip all-NaN columns + `try/except` per column. *(Vivait alors dans `api/process.py` ; depuis la consolidation — entrée #34 — c'est `core/processing.py`, où chaque étape dégrade toujours par colonne.)*
 - (`_smooth`/`_normalize`/`_remove_outliers` were already safe: NaN std/min/max guards.)
 
 **Symptom**: enabling denoise or baseline returns 500 on these files; nothing processes.
