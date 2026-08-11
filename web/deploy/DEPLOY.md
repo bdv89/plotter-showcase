@@ -252,6 +252,12 @@ Restart-Service CSVPlotter_Exp -Force        # PowerShell admin requis
 > installée côté beta et `tsc -b` cassait (vécu avec `vitest` : `error TS2307: Cannot find module 'vitest'`). `npm install` prend ~1 s quand rien
 > ne change — le garder inconditionnel.
 
+### ⚠️ Ne jamais builder la prod à la main
+
+`--base=/plotter/` et `VITE_API_URL=/plotter/api` sont **deux** réglages, et l'oubli du second ne se voit pas : la page s'affiche parfaitement et **tous** les appels API partent en 404 (`GET /api/session` au lieu de `/plotter/api/session`). Arrivé le 10/08, prod cassée ~14 h. Toujours passer par `promote-exp-to-prod.ps1` (§7), qui pose les deux.
+
+Depuis, `npm run build` lance automatiquement `scripts/check-build.mjs` (npm `postbuild`) : il compare la base écrite dans `dist/index.html` à l'URL d'API compilée dans le bundle et **rejette le build** (code 1) en cas d'écart, en affichant la commande correcte. Il vérifie aussi l'absence d'import nu (page blanche). ⚠️ Le rejet intervient **après** l'écriture du `dist/` : un build refusé laisse un `dist/` cassé — relancer immédiatement avec la commande affichée.
+
 ### ⚠️ Un uvicorn dev peut squatter le port de la prod
 
 `start-plotter.ps1` (dev only) lance `uvicorn --reload --host 0.0.0.0 --port 9099` — **le port de la prod**. S'il tourne encore, le service NSSM

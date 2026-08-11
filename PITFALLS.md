@@ -39,6 +39,7 @@ Quick reference for common bugs and their fixes.
 31. [Copy Data: navigator.clipboard undefined on HTTP/LAN](#copy-data-navigatorclipboard-undefined-on-httplan) ✅ FIXED
 32. [Old .db pool loads with no legend](#old-db-pool-loads-with-no-legend) ⚠️ PAR DESIGN
 33. [Clear all + Load freezes: RLock released cross-thread](#clear-all--load-freezes-rlock-released-cross-thread) ✅ FIXED
+34. [Le traitement s'appliquait à côté du chemin de plot](#le-traitement-sappliquait-à-côté-du-chemin-de-plot) ✅ FIXED
 
 ---
 
@@ -895,3 +896,77 @@ locales: { en: { dictionary: { 'Click to enter Plot subtitle': ' ' } } },
 - Un contournement maison « clic sur le titre → ouvre le panneau de réglages » : il entre en **conflit** avec l'édition en place une fois `titleText` réactivé (les deux se déclenchent sur le même clic).
 
 **Prevention** : avant de désactiver un `config.edits.*` pour faire disparaître un élément, vérifier ce que cet interrupteur commande **d'autre** — dans Plotly un même flag couvre souvent le titre et ses satellites. Le réflexe utile : `node_modules/plotly.js/src/` est livré en clair, bien plus lisible que le `dist/` minifié.
+
+---
+
+## Le traitement s'appliquait à côté du chemin de plot
+
+**Symptômes** (tous silencieux, aucun message d'erreur) : cocher un fichier après avoir réglé le lissage → il arrive **brut** au milieu de courbes traitées · F5 → cases toujours cochées mais plot brut · activer Normalize → **l'axe X écrasé en 0–1** · Median/Wavelet/FFT → aucun effet visible.
+
+**Cause — deux ruptures qui se cumulent :**
+
+1. **Le traitement était un canal parallèle.** `ProcessingPanel` postait sur `/api/process`, qui rangeait le DataFrame traité dans `state.processed_cache[file_id]` — **clé = `file_id` seul, sans les réglages**. `/plot-data` se contentait de *lire* ce cache. Donc : un fichier jamais passé par `/process` sortait brut, un fichier passé avec d'anciens réglages sortait périmé, et le cache étant en RAM, un restart serveur remettait tout au brut pendant que l'UI affichait toujours les réglages.
+2. **Un champ non déclaré côté Pydantic est jeté sans erreur.** `ColumnSelector` envoyait bien `processing` (et `styles`) dans le corps de `/plot-data`, mais `PlotRequest` ne les déclarait pas → Pydantic les ignore **silencieusement**. Même chose côté `extractData`, où `processing` était un paramètre TypeScript déclaré et jamais mis dans le body.
+
+Deux bugs collatéraux venaient du même endroit : le pipeline bouclait sur `select_dtypes(include=[np.number])`, donc **la colonne X était traitée comme les autres** ; et `_denoise` passait `window=`/`polyorder=` à **toutes** les méthodes alors que `median_filter_denoise(kernel_size)`, `wavelet_denoise(wavelet, level, mode)` et `fft_lowpass_denoise(cutoff_freq)` ne les acceptent pas → `TypeError`, non attrapé par le `except ValueError` de `denoise_methods.denoise` → **500** avalé en `console.error`.
+
+**Solution — supprimer le canal parallèle** (`core/processing.py`) :
+
+- `apply_processing(df, settings, columns, x_column)` est appelé **en ligne** par `/plot-data` et `/extract`. `/api/process`, `ProcessRequest`, `client.processFile` et l'effet de `ProcessingPanel` sont **supprimés** — le panneau est redevenu de l'UI pure sur le store.
+- `PlotRequest` / `ExtractRequest` déclarent `processing: dict = {}`.
+- `ColumnSelector` est le **seul** déclencheur de plot ; `processing` fait partie de son empreinte d'auto-plot (toutes les sections restent montées, donc ça couvre aussi l'onglet Process).
+- **Clé de cache = `file_id | settings JSON | colonnes | x_column`** → une entrée périmée est impossible. Corollaire : `DELETE /api/files/{id}` doit purger **tous** les préfixes `f"{file_id}|"`, pas la clé `file_id`.
+- `columns` = les colonnes réellement lues → **X n'est jamais traité**.
+- `DENOISE_KWARGS` : chaque méthode reçoit les kwargs qu'elle accepte.
+
+**Deux découvertes en vérifiant :**
+
+- **Wavelet était un no-op même après le fix des kwargs** : pandas *copy-on-write* renvoie des `.values` en **lecture seule**, et pywt écrit dans son buffer d'entrée → `ValueError: buffer source array is read-only`, attrapé par la garde par-colonne → colonne laissée telle quelle, sans bruit. Fix dans `denoise_methods._validate_data` : `if not arr.flags.writeable: arr = arr.copy()`.
+- **`subtract_baseline(x, y, …)` ignore `x`** pour `snip`/`asls`/`arpls` (seul `polynomial`, non exposé dans l'UI, l'utilise). Lui passer la vraie colonne X est correct mais ne change **rien** au résultat des trois méthodes proposées — ne pas l'annoncer comme un correctif visible.
+
+**Prevention** :
+- Un champ envoyé par le front doit exister dans le modèle Pydantic, sinon il disparaît **sans erreur**. Au moindre doute : `print(req)` côté endpoint.
+- Un cache dont la clé ne porte pas les paramètres du calcul **est** un bug, pas une optimisation.
+- Un traitement doit vivre **sur** le chemin de lecture des données, pas à côté avec un cache comme point de rendez-vous.
+- Un `except` par colonne évite de perdre un fichier entier (pitfall #27) mais **cache aussi les vraies erreurs** : quand une méthode « ne fait rien », lire les `⚠️` du backend avant de conclure.
+
+---
+
+## API en 404 : `--base` posé, `VITE_API_URL` oublié
+
+> ✅ **FIXED** (2026-08-11) : `/plotter/` s'affichait normalement (HTTP 200, assets OK) mais **tous** les appels API répondaient 404 — app inutilisable pendant ~14 h sans que rien ne le signale.
+
+**Symptom** — dans `access.log`, des requêtes API en **chemin absolu**, sans le sous-chemin :
+```
+GET /api/session          404   referrer: http://mn-panda/plotter/
+GET /api/metrics/summary  404
+CreateFile() "<NGINX_DIR>/html/api/session" failed      (error.log)
+```
+nginx n'a pas de `location /api/` : la requête tombe sur la racine statique → 404.
+
+**Cause** : un build de prod lancé à la main avec `--base=/plotter/` **mais sans** `VITE_API_URL=/plotter/api`. `src/api/client.ts` fait :
+```ts
+const API_BASE = import.meta.env.VITE_API_URL || '/api';   // <- repli silencieux
+```
+Ce sont **deux réglages distincts**, et ils échouent très différemment :
+
+| Oubli | Conséquence | Visibilité |
+|---|---|---|
+| `--base=/plotter/` | assets en `/assets/…` → 404 → **page blanche** | immédiate |
+| `VITE_API_URL=/plotter/api` | page **parfaite**, toutes les données en 404 | **aucune** — il faut ouvrir la console ou les logs |
+
+Le second est le plus dangereux : rien ne distingue visuellement l'app cassée d'une app sans données chargées.
+
+**Diagnostic en une commande** — l'URL d'API est compilée en dur dans le bundle :
+```powershell
+Select-String dist\assets\index-*.js -Pattern '/plotter/api' | Measure-Object   # 0 = casse
+```
+
+**Solution** : rebuilder avec les **deux** réglages (ce que fait déjà `deploy/promote-exp-to-prod.ps1:69-70` — la prod ne devrait jamais se builder à la main) :
+```powershell
+$env:VITE_API_URL = '/plotter/api'; npm run build -- --base=/plotter/
+```
+
+**Prevention** — `web/frontend/scripts/check-build.mjs`, branché en **`postbuild`** dans `package.json` : npm le lance après *chaque* `npm run build`, y compris manuel. Il extrait la base réellement écrite dans `dist/index.html` et exige que le bundle contienne `<base>api` ; sinon il sort en code 1 avec la commande correcte à recopier. C'est une vérification de **cohérence interne** : rien n'est codé en dur, elle vaut pour `/plotter/`, `/plotter-exp/` et la racine. Il contrôle au passage l'absence d'import nu (cf. « Page blanche en prod »).
+
+⚠️ Le garde-fou rejette **après** l'écriture du `dist/` : un build refusé laisse donc un `dist/` cassé sur le disque. Les scripts de promotion s'arrêtent (`$LASTEXITCODE -ne 0` → `throw`) avant de redémarrer quoi que ce soit, mais la prod étant servie **directement** depuis `dist/`, un build refusé la casse jusqu'au rebuild correct. L'échec est bruyant : relancer immédiatement avec la commande affichée.
