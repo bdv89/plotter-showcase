@@ -98,6 +98,21 @@ export interface ProcessingSettings {
   peak_method: string;
 }
 
+// La « recette » d'une colonne extraite : tout ce qu'il faut pour la recalculer
+// sur d'autres fichiers (ex. après en avoir ajouté). Le `processing` n'y est PAS
+// figé — on rejoue avec celui de la session, comme le fait /plot-data.
+export interface ExtractRecipe {
+  column: string;
+  operation: string;
+  x_column?: string;
+  x_value?: number;
+  x_min?: number;
+  x_max?: number;
+  threshold?: number;
+  condition_column?: string;
+  operator?: string;
+}
+
 export interface ExtractionResult {
   file_id: string;
   column_name: string;

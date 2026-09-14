@@ -35,6 +35,19 @@ npm run build -- --base=/plotter/             # → web\frontend\dist\
 ```
 Vérif : `dist\index.html` doit référencer `/plotter/assets/…`.
 
+> ⚠️ **Toujours depuis PowerShell.** Sous Git Bash (MSYS), un argument commençant
+> par `/` est réécrit en chemin Windows : `--base=/plotter/` devient
+> `--base=/Program Files/Git/plotter/`. Et comme `VITE_API_URL` subit la **même**
+> réécriture, les deux valeurs restent cohérentes entre elles et `check-build.mjs`
+> valide un `dist` pourtant inutilisable. Sinon, poser `MSYS_NO_PATHCONV=1`.
+
+> ⚠️ **`dist/` est servi en direct par nginx et n'est pas versionné.** Un
+> `npm run build` nu lancé pendant une session de dev (base `/`) écrase donc le
+> `dist` de la prod et casse `/plotter/` — sans sauvegarde possible, il faut
+> rebuilder aux flags ci-dessus. `check-build.mjs` détecte le cas et rappelle la
+> commande. Voir [PITFALLS.md](../../PITFALLS.md) « `npm run build` nu écrase le
+> dist ».
+
 ## 2. Installer le backend en service (NSSM, admin)
 Prérequis : venv backend (`web\backend\venv_win`) + NSSM (https://nssm.cc).
 Le nom du service **doit** être `CSVPlotter` (= `task_name` attendu par le dashboard).
@@ -83,7 +96,7 @@ Puis `Restart-Service Dashboard` (admin) → Plotter apparaît (health vert) et 
 |---|---|---|
 | `UPLOAD_DIR` | uploads + cache | `C:\ProgramData\Plotter\uploads` |
 | `SESSIONS_DIR` | persistance session `<sid>.db` | `…\uploads\sessions` |
-| `SHARE_PATH` | share réseau pour pools (optionnel) | *(vide)* |
+| `SHARE_PATH` | dossier partagé : pools listés par `/api/pool/list` **et seule porte d'entrée des données du MCP** | *(vide)* — **à poser pour activer le MCP** |
 | `MAX_FILES` | fichiers par session | `300` |
 | `MAX_SESSIONS_IN_MEMORY` | sessions chaudes en RAM (LRU ; ≈ pic de concurrence) | `16` |
 | `SESSION_TTL` | éviction RAM après inactivité (s) ; non destructif | `28800` (8 h) |
@@ -92,6 +105,40 @@ Puis `Restart-Service Dashboard` (admin) → Plotter apparaît (health vert) et 
 | `PYTHONUTF8` | évite le crash des prints emoji | `1` |
 
 Empreinte mesurée sur données réelles (~0,27 Mo/fichier) : pic RAM ≈ `MAX_SESSIONS_IN_MEMORY × MAX_FILES × 0,3 Mo` ≈ **1,4 Go** au pire, < 0,5 Go typique. Le NVMe est le magasin : seules les sessions actives restent en RAM, les autres sont rechargées du disque au retour.
+
+## MCP : piloter l'app depuis une LLM
+
+Le backend monte un serveur MCP sur `/mcp`, proxifié en `/plotter/mcp` (bloc dans
+`services-plotter.conf`). Les utilisateurs le branchent **sans rien installer** — la commande
+est affichée dans le panneau d'aide (`?`) de l'app :
+
+```
+claude mcp add --transport http plotter http://<serveur>/plotter/mcp
+```
+
+**Deux prérequis côté serveur :**
+
+1. **`SHARE_PATH` doit pointer sur un dossier réel** — le serveur MCP tourne sur le serveur et
+   ne voit pas le disque des utilisateurs. Sans partage, les tools répondent proprement mais
+   aucune donnée ne peut entrer. Le compte du service NSSM doit y avoir accès en **lecture et
+   écriture** (la LLM y réécrit les pools `.db`).
+2. **`mcp` et `matplotlib` dans le venv du service.** Les `promote-*.ps1` s'en chargent
+   désormais (étape `[2/4]`, `pip install -r requirements.txt` avant le restart). Pour une
+   install manuelle : `.\venv_win\Scripts\python.exe -m pip install -r requirements.txt`.
+   ⚠️ Sans ces paquets, `main.py` ne s'importe plus et **le backend ne démarre pas du tout**.
+3. **Le bloc nginx `location /plotter/mcp`** : `proxy_buffering off` + `proxy_http_version 1.1`
+   sont obligatoires (le transport streame), et le bloc doit rester plus spécifique que
+   `location /plotter/` — nginx choisit la plus longue correspondance de préfixe.
+
+⚠️ **Aucune authentification.** Exposer `/plotter/mcp` donne à quiconque atteint nginx le droit
+de piloter le serveur et de lire/écrire `SHARE_PATH` — c'est le modèle LAN de confiance déjà
+en place, mais avec une surface plus large. Ne pas publier ce chemin hors du LAN ; le retirer
+du bloc nginx suffit à désactiver la fonctionnalité sans toucher au code.
+
+Charge : le rendu des figures et les traitements tournent dans le backend de prod, qui n'a
+**qu'un seul worker uvicorn**. Les tools s'exécutent hors de l'event loop et `HEAVY_CONCURRENCY`
+continue de borner les jobs lourds, mais une extraction sur des dizaines de fichiers reste
+sérialisée par le verrou de session.
 
 ## 🔒 Sécurité (modèle LAN de confiance)
 - **`X-Session-Id` est fourni par le client** (UUID localStorage) → ce n'est **pas** une authentification : un utilisateur pourrait en théorie usurper l'id d'un autre. Acceptable sur un **LAN de confiance** (pas de données sensibles inter-utilisateurs). Pour une vraie isolation, il faudrait un id opaque émis serveur (cookie httpOnly) ou un SSO — hors périmètre.

@@ -3,7 +3,7 @@ import { useAppStore } from '../store/appStore';
 import type { FileStyle } from '../types';
 import { ColumnSelector } from './ColumnSelector';
 import { StyleBar } from './StyleBar';
-import { deleteFile, resetSession, removeExtractedColumn as removeExtractedColumnApi } from '../api/client';
+import { deleteFile, resetSession } from '../api/client';
 import { COLOR_PALETTES } from '../utils/coloring';
 
 const LINE_STYLES = [
@@ -17,15 +17,12 @@ export function FileTable() {
   const files = useAppStore(s => s.files);
   const checkedFiles = useAppStore(s => s.checkedFiles);
   const fileStyles = useAppStore(s => s.fileStyles);
-  const extractedColumns = useAppStore(s => s.extractedColumns);
   const toggleFile = useAppStore(s => s.toggleFile);
   const setFileStyle = useAppStore(s => s.setFileStyle);
   const patchStyles = useAppStore(s => s.patchStyles);
   const removeFile = useAppStore(s => s.removeFile);
   const checkFiles = useAppStore(s => s.checkFiles);
   const uncheckFiles = useAppStore(s => s.uncheckFiles);
-  const removeExtractedColumn = useAppStore(s => s.removeExtractedColumn);
-  const clearExtractedColumns = useAppStore(s => s.clearExtractedColumns);
   const paletteName = useAppStore(s => s.paletteName);
   const y2Columns = useAppStore(s => s.y2Columns);
   const showY2 = y2Columns.length > 0;
@@ -66,29 +63,6 @@ export function FileTable() {
     return files.filter(f => f.filename.toLowerCase().includes(q));
   }, [files, search]);
 
-  // Supprime une colonne extraite (tous fichiers), avec confirmation, côté
-  // serveur + store → ne réapparaît pas au rechargement.
-  const handleDeleteExtracted = async (name: string) => {
-    if (!window.confirm(`Supprimer la colonne « ${name} » ?`)) return;
-    try {
-      await removeExtractedColumnApi(name);
-    } catch (err) {
-      console.error('Failed to delete extracted column:', err);
-    }
-    removeExtractedColumn(name);
-  };
-
-  // Supprime toutes les colonnes extraites (un seul appel serveur).
-  const handleClearExtracted = async () => {
-    if (!window.confirm('Supprimer toutes les colonnes extraites ?')) return;
-    try {
-      await removeExtractedColumnApi();
-    } catch (err) {
-      console.error('Failed to clear extracted columns:', err);
-    }
-    clearExtractedColumns();
-  };
-
   const handleDelete = async (fileId: string) => {
     try {
       await deleteFile(fileId);
@@ -110,13 +84,6 @@ export function FileTable() {
     }
     files.forEach(f => removeFile(f.file_id));
   };
-
-  // Collect all extracted column names
-  const extractedColNames = new Set<string>();
-  Object.values(extractedColumns).forEach(cols => {
-    Object.keys(cols).forEach(name => extractedColNames.add(name));
-  });
-  const extraCols = Array.from(extractedColNames);
 
   // Keep the active-row cursor within bounds when the visible list shrinks.
   useEffect(() => {
@@ -207,9 +174,6 @@ export function FileTable() {
           />
           <div className="toolbar-cleanup">
             <button onClick={clearAll} title="Remove all files from the list">Clear all</button>
-            {extraCols.length > 0 && (
-              <button onClick={handleClearExtracted} title="Delete all extracted columns">Clear extracted</button>
-            )}
           </div>
         </div>
 
@@ -261,19 +225,6 @@ export function FileTable() {
             {showY2 && <th className="col-color">Y2</th>}
             <th className="col-style">Style</th>
             <th className="col-legend">Legend</th>
-            {extraCols.map(name => (
-              <th key={name} className="col-extracted">
-                {name}
-                <button
-                  className="delete-btn"
-                  title={`Delete column "${name}"`}
-                  onClick={() => handleDeleteExtracted(name)}
-                  style={{ marginLeft: 4 }}
-                >
-                  ✕
-                </button>
-              </th>
-            ))}
             <th className="col-delete"></th>
           </tr>
         </thead>
@@ -281,7 +232,6 @@ export function FileTable() {
           {visibleFiles.map((file, rowIdx) => {
             const style = fileStyles[file.file_id];
             const isChecked = checkedFiles.has(file.file_id);
-            const fileExtracted = extractedColumns[file.file_id] || {};
             const cls = [isChecked ? 'row-checked' : '', rowIdx === activeRow ? 'row-active' : ''].filter(Boolean).join(' ');
 
             return (
@@ -331,14 +281,6 @@ export function FileTable() {
                     onChange={e => setFileStyle(file.file_id, { legend_label: e.target.value })}
                   />
                 </td>
-                {extraCols.map(name => {
-                  const ext = fileExtracted[name];
-                  return (
-                    <td key={name} className="col-extracted">
-                      {ext != null ? ext.value.toFixed(ext.precision) : '-'}
-                    </td>
-                  );
-                })}
                 <td className="col-delete">
                   <button
                     className="delete-btn"

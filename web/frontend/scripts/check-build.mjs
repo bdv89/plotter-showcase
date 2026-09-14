@@ -6,9 +6,16 @@
 //      s'affiche mais TOUS les appels partent en 404. Panne silencieuse.
 //   2. un import nu en tête de bundle -> le module ne charge pas, page blanche.
 //
+// Et AVERTIT sur la troisieme, qui ne se repare pas toute seule :
+//
+//   3. un build de dev (base /) ecrase le dist/ que le service prod sert en
+//      direct -> la prod passe en page blanche + API 404 jusqu'au prochain
+//      build aux flags prod. dist/ n'etant pas versionne, l'ancien est perdu.
+//
 // Voir PITFALLS.md. Sortie en code 1 = build rejeté.
 
 import { readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const DIST = new URL('../dist/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
@@ -49,6 +56,41 @@ if (/^\s*import\s/.test(js)) {
     `  echoue -> page blanche. Chercher un import qui tire un graphe Node\n` +
     `  (typiquement 'plotly.js' au lieu de 'plotly.js/dist/plotly').`,
   );
+}
+
+// --- 3. dist ecrase sous le nez d'un service qui le sert ------------------
+// Le backend sert FRONTEND_DIST (= ce dossier) en direct : un build base '/'
+// laisse la prod avec des assets introuvables. On ne peut plus l'annuler ici
+// (le dist est deja ecrit) — on le DIT, avec la commande de reparation.
+if (base === '/' && process.platform === 'win32') {
+  const running = ['CSVPlotter', 'CSVPlotter_Exp'].filter(name => {
+    try {
+      return /STATE\s+:\s+4\s+RUNNING/.test(execFileSync('sc', ['query', name], { encoding: 'utf8' }));
+    } catch {
+      return false;   // service absent = rien a signaler
+    }
+  });
+  if (running.length > 0) {
+    const sub = running.includes('CSVPlotter') ? '/plotter/' : '/plotter-exp/';
+    console.warn(
+      `
+⚠️  DIST ECRASE — service(s) ${running.join(', ')} en cours d'execution
+
+` +
+      `  Ce build est en base '/', mais le backend sert CE dossier dist/ derriere
+` +
+      `  nginx en sous-chemin. Les assets sont maintenant introuvables : page
+` +
+      `  blanche + API en 404, et l'ancien dist n'est pas versionne.
+
+` +
+      `  Rebuild aux flags de deploiement pour reparer :
+
+` +
+      `      $env:VITE_API_URL='${sub}api'; npm run build -- --base=${sub}
+`,
+    );
+  }
 }
 
 console.log(`✓ build coherent — base ${base}, api ${base === '/' ? '/api' : expectedApi}, pas d'import nu`);

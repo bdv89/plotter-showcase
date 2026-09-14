@@ -3,7 +3,8 @@ import { FileTable } from './components/FileTable';
 import { StyleBar } from './components/StyleBar';
 import { PlotView } from './components/PlotView';
 import { ProcessingPanel } from './components/ProcessingPanel';
-import { ExtractionModal } from './components/ExtractionModal';
+import { ExtractPanel } from './components/ExtractPanel';
+import { StatsBar } from './components/StatsBar';
 import { HelpModal } from './components/HelpModal';
 import { MetricsView } from './components/MetricsView';
 import { useAppStore } from './store/appStore';
@@ -13,7 +14,6 @@ import { displayTokens } from './utils/coloring';
 import './App.css';
 
 function App() {
-  const [extractionOpen, setExtractionOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [poolStatus, setPoolStatus] = useState('');
   const [activeSection, setActiveSection] = useState('page-data');
@@ -27,7 +27,7 @@ function App() {
   const error = useAppStore(s => s.error);
   const setError = useAppStore(s => s.setError);
 
-  // Keyboard: Alt+1..4 switch tabs (Alt+digit avoids the browser's Ctrl+digit).
+  // Keyboard: Alt+1..5 switch tabs (Alt+digit avoids the browser's Ctrl+digit).
   // !shiftKey so it never overlaps Alt+Shift+digit (Group By) handled in FileTable.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,7 +41,7 @@ function App() {
       // Group by tokens — Alt+Shift+1..9 toggle / Alt+Shift+0 Auto, on DATA + Plot.
       if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && !typing) {
         const m = /^Digit([0-9])$/.exec(e.code);
-        if (m && document.querySelector('.page-data.active, .page-plot.active')) {
+        if (m && document.querySelector('.page-data.active, .page-plot.active, .page-extract.active')) {
           e.preventDefault();
           const n = Number(m[1]);
           const st = useAppStore.getState();
@@ -54,10 +54,11 @@ function App() {
         return;
       }
 
-      // Alt+1..4 switch tabs (no other modifier; Alt+Shift+digit is Group By).
+      // Alt+1..5 switch tabs (no other modifier; Alt+Shift+digit is Group By).
       if (!e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return;
       const map: Record<string, string> = {
-        Digit1: 'page-data', Digit2: 'page-plot', Digit3: 'page-processing', Digit4: 'page-metrics',
+        Digit1: 'page-data', Digit2: 'page-plot', Digit3: 'page-processing',
+        Digit4: 'page-extract', Digit5: 'page-metrics',
       };
       const target = map[e.code];
       if (target) {
@@ -83,11 +84,25 @@ function App() {
 
   // Build the .db bytes from the current session (backend serializes to SQLite).
   const getPoolBlob = () => {
-    const { files, fileStyles, extractedColumns, plotStyle, drawings, processing, xColumn, yColumns, y2Columns } = useAppStore.getState();
+    const {
+      files, fileStyles, extractedColumns, plotStyle, drawings, processing,
+      xColumn, yColumns, y2Columns,
+      statsVisible, statsCols, statsHiddenExtracted, extractedDecimals, hiddenLegend,
+      extractRecipes,
+    } = useAppStore.getState();
     return exportPool({
       files, styles: fileStyles, extracted: extractedColumns,
-      // Drawings ride inside plot_style (backend keeps it as an opaque dict).
-      plot_style: { ...plotStyle, drawings } as typeof plotStyle,
+      // Drawings AND the stats box ride inside plot_style (backend keeps it as
+      // an opaque dict) — no backend change needed to persist either.
+      plot_style: {
+        ...plotStyle,
+        drawings,
+        stats: { visible: statsVisible, cols: statsCols, hiddenExtracted: statsHiddenExtracted, decimals: extractedDecimals },
+        hiddenLegend,
+        // Les recettes d'extraction : sans elles, un pool rechargé garde ses
+        // colonnes mais ne sait plus les rejouer sur de nouveaux fichiers.
+        recipes: extractRecipes,
+      } as typeof plotStyle,
       processing,
       x_column: xColumn, y_columns: yColumns, y2_columns: y2Columns,
     });
@@ -200,67 +215,6 @@ function App() {
     processFiles(dropped);
   };
 
-  // navigator.clipboard n'existe qu'en contexte sécurisé (HTTPS/localhost) ;
-  // en HTTP sur IP LAN (Firefox strict), il est undefined → fallback execCommand.
-  const copyToClipboard = async (text: string): Promise<boolean> => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-    } catch {
-      // tombe sur le fallback ci-dessous
-    }
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
-      return ok;
-    } catch {
-      return false;
-    }
-  };
-
-  // Copy checked files as TSV (Filename, Legend, extracted columns) for spreadsheets.
-  const handleCopyData = async () => {
-    const { files, checkedFiles, fileStyles, extractedColumns } = useAppStore.getState();
-    const rows = files.filter(f => checkedFiles.has(f.file_id));
-    if (rows.length === 0) {
-      setPoolStatus('Aucun fichier coché');
-      setTimeout(() => setPoolStatus(''), 3000);
-      return;
-    }
-    // Union of extracted column names across checked files (insertion order).
-    const cols: string[] = [];
-    rows.forEach(f => {
-      Object.keys(extractedColumns[f.file_id] || {}).forEach(c => {
-        if (!cols.includes(c)) cols.push(c);
-      });
-    });
-    const header = ['Filename', 'Legend', ...cols];
-    const body = rows.map(f => {
-      const legend = fileStyles[f.file_id]?.legend_label || f.filename.replace(/\.[^.]+$/, '');
-      const values = cols.map(c => {
-        const e = extractedColumns[f.file_id]?.[c];
-        return e ? e.value.toFixed(e.precision).replace('.', ',') : '';
-      });
-      return [f.filename, legend, ...values];
-    });
-    const tsv = [header, ...body].map(r => r.join('\t')).join('\n');
-    if (await copyToClipboard(tsv)) {
-      setPoolStatus(`Copié ${rows.length} ligne(s)`);
-    } else {
-      setError('Copie presse-papier échouée');
-    }
-    setTimeout(() => setPoolStatus(''), 3000);
-  };
-
   return (
     <div className="app">
       <header className="app-header">
@@ -269,6 +223,7 @@ function App() {
           <button className={activeSection === 'page-data' ? 'active' : ''} onClick={() => setActiveSection('page-data')}>Data</button>
           <button className={activeSection === 'page-plot' ? 'active' : ''} onClick={() => setActiveSection('page-plot')}>Plot</button>
           <button className={activeSection === 'page-processing' ? 'active' : ''} onClick={() => setActiveSection('page-processing')}>Process</button>
+          <button className={activeSection === 'page-extract' ? 'active' : ''} onClick={() => setActiveSection('page-extract')}>Extract</button>
           <button className={activeSection === 'page-metrics' ? 'active' : ''} onClick={() => setActiveSection('page-metrics')}>Metrics</button>
         </nav>
         <div className="header-actions">
@@ -307,16 +262,6 @@ function App() {
             onChange={handleLoadInput}
           />
           {poolStatus && <span className="pool-status">{poolStatus}</span>}
-          <button className="pool-button" onClick={() => setExtractionOpen(true)}>
-            Extract Data
-          </button>
-          <button
-            className="pool-button"
-            onClick={handleCopyData}
-            title="Copier (filename, legend, colonnes extraites) — collable dans un tableur"
-          >
-            Copy Data
-          </button>
         </div>
       </header>
 
@@ -333,7 +278,7 @@ function App() {
         </section>
 
         <section className={`page page-plot${activeSection === 'page-plot' ? ' active' : ''}`} id="page-plot">
-          <div className="plot-stylebar"><StyleBar /></div>
+          <div className="plot-stylebar"><StyleBar /><StatsBar /></div>
           <PlotView />
         </section>
 
@@ -341,12 +286,15 @@ function App() {
           <ProcessingPanel />
         </section>
 
+        <section className={`page page-extract${activeSection === 'page-extract' ? ' active' : ''}`} id="page-extract">
+          <ExtractPanel />
+        </section>
+
         <section className={`page page-metrics${activeSection === 'page-metrics' ? ' active' : ''}`} id="page-metrics">
           <MetricsView />
         </section>
       </div>
 
-      <ExtractionModal open={extractionOpen} onClose={() => setExtractionOpen(false)} />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );

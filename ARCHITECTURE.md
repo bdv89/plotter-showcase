@@ -31,15 +31,20 @@ Navigateur                          Serveur
 
 ## Cartographie rapide (web)
 
-- **Backend API** : `web/backend/api/` — `upload`, `plot`, `process`, `extract`,
-  `pool` (routers, tous scopés par session via le header `X-Session-Id`).
-- **Backend Core** : `web/backend/core/` — `pipeline`, `extraction`, `denoise_methods`,
-  `baseline_correction`, `data_loader`, `db_schema` (+ `processors/`).
+- **Backend API** : `web/backend/api/` — `upload`, `plot`, `extract`, `pool`, `metrics`
+  (routers, tous scopés par session via le header `X-Session-Id`, sauf `metrics`).
+  Il n'y a **pas** de router `process` : le traitement est appliqué **en ligne** par
+  `plot` et `extract` (cf. [PITFALLS.md](PITFALLS.md) #34).
+- **Backend Core** : `web/backend/core/` — `processing` (l'unique `apply_processing`),
+  `extraction`, `denoise_methods`, `baseline_correction`, `data_loader`, `data_utils`,
+  `db_schema`, `metrics`.
+- **MCP** : `web/backend/mcp_server.py` — pilotage du backend par une LLM, monté sur `/mcp`.
 - **Sessions / état** : `web/backend/sessions.py` (`SessionManager` multi-tenant,
   LRU RAM + persistance `<sid>.db` + TTL) et `web/backend/state.py` (`AppState` par session).
 - **Frontend** : `web/frontend/src/components/` (FileTable, ColumnSelector, PlotView,
-  PlotSettings, ProcessingPanel, ExtractionModal) + `src/store/appStore.ts` (Zustand)
-  + `src/api/client.ts`.
+  PlotSettings, ProcessingPanel, ExtractPanel, StatsBar, StatsTable, SeriesPicker,
+  StyleBar, MetricsView, HelpModal) + `src/store/appStore.ts` (Zustand)
+  + `src/api/client.ts` + `src/utils/` (coloring, stats, clipboard…).
 
 → Détail des endpoints, des slices Zustand, du format `.db` et des conventions
 cross-stack : **[CLAUDE.md](CLAUDE.md)**. Déploiement (nginx, NSSM, 3 environnements) :

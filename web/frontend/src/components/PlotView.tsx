@@ -8,6 +8,7 @@ import Plot from 'react-plotly.js';
 import Plotly from 'plotly.js/dist/plotly';
 import { useAppStore } from '../store/appStore';
 import { PlotSettings, type SettingsSection } from './PlotSettings';
+import { buildStatsGrid, computePopulations, extractedColumnNames, DEFAULT_DECIMALS } from '../utils/stats';
 import type { Data, Layout, Config, Dash, PlotMouseEvent } from 'plotly.js';
 
 type Zone = 'title' | 'legend' | 'xaxis' | 'yaxis' | 'y2axis' | 'plot';
@@ -90,6 +91,16 @@ function legendPosition(loc: string): { x: number; y: number; xanchor?: Anchor; 
   return map[loc] || map['best'];
 }
 
+// One definition of the paper box. The stats table sizes its domain against it,
+// and the layout applies it — duplicating these numbers would silently drift.
+function plotMargin(hasY2: boolean, hasTitle: boolean) {
+  return { l: 70, r: hasY2 ? 70 : 30, t: hasTitle ? 50 : 30, b: 60 };
+}
+
+// Plotly renders cell text through convertToTspans, so a stray '<' in a custom
+// column name would be read as markup. Escape before we add our own <b>.
+const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 const LINE_DASH_MAP: Record<string, string> = {
   'solid': 'solid', 'dashed': 'dash', 'dotted': 'dot', 'dashdot': 'dashdot',
   'dash': 'dash', 'dot': 'dot',
@@ -116,6 +127,19 @@ export function PlotView() {
   const toggleDrawings = useAppStore(s => s.toggleDrawings);
   const drawColor = useAppStore(s => s.drawColor);
   const setDrawColor = useAppStore(s => s.setDrawColor);
+  // Population stats box (same state as the Extract tab, see StatsBar).
+  const files = useAppStore(s => s.files);
+  const checkedFiles = useAppStore(s => s.checkedFiles);
+  const extractedColumns = useAppStore(s => s.extractedColumns);
+  const seriesTokenIndices = useAppStore(s => s.seriesTokenIndices);
+  const statsVisible = useAppStore(s => s.statsVisible);
+  const statsCols = useAppStore(s => s.statsCols);
+  const statsHiddenExtracted = useAppStore(s => s.statsHiddenExtracted);
+  const extractedDecimals = useAppStore(s => s.extractedDecimals);
+  const hiddenLegend = useAppStore(s => s.hiddenLegend);
+  const toggleHiddenLegend = useAppStore(s => s.toggleHiddenLegend);
+  const isolateLegend = useAppStore(s => s.isolateLegend);
+
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; zone: Zone } | null>(null);
   const [selectedCurve, setSelectedCurve] = useState<{ fileId: string; clickX: number; clickY: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -157,7 +181,11 @@ export function PlotView() {
       const name = label || trace.name;
       const firstOfLabel = !!label && !seenLabels.has(label);
       if (label) seenLabels.add(label);
+      // Driven from the store, not from Plotly's internal legendonly state:
+      // rebuilding `data` would reset that on any unrelated change.
+      const hidden = !!label && hiddenLegend.includes(label);
       return {
+        visible: hidden ? ('legendonly' as const) : true,
         x: trace.x,
         y: trace.y,
         name,
@@ -173,7 +201,102 @@ export function PlotView() {
         },
       };
     });
-  }, [traces, plotStyle.line_width, fileStyles]);
+  }, [traces, plotStyle.line_width, fileStyles, hiddenLegend]);
+
+
+  // A real Plotly `table` trace, not a padded block of text: headers and cells
+  // line up structurally, in any font. It renders into gd._fullLayout._paper —
+  // the same SVG toSVG() serializes — so it lands in the PNG/SVG export.
+  // Rebuilt from the data, so unchecking a file updates the figure immediately.
+  // What the FIGURE actually shows: checked, minus anything switched off in the
+  // legend. The table on the plot must agree with the curves next to it — the
+  // Extract tab keeps showing everything checked, that is the data view.
+  const shownFiles = useMemo(() => {
+    if (hiddenLegend.length === 0) return checkedFiles;
+    return new Set([...checkedFiles].filter(
+      id => !hiddenLegend.includes(fileStyles[id]?.legend_label || '')));
+  }, [checkedFiles, hiddenLegend, fileStyles]);
+
+  const statsTable = useMemo(() => {
+    if (!statsVisible) return null;
+    const columns = extractedColumnNames(files, shownFiles, extractedColumns)
+      .filter(c => !statsHiddenExtracted.includes(c));
+    if (columns.length === 0 || statsCols.length === 0) return null;
+    const rows = computePopulations(files, shownFiles, extractedColumns, seriesTokenIndices);
+    if (rows.length === 0) return null;
+
+    const grid = buildStatsGrid(rows, columns, statsCols, c => extractedDecimals[c] ?? DEFAULT_DECIMALS);
+    // Same size as the legend: both are blocks of text laid on the figure, so
+    // they must carry the same visual weight and move together.
+    const size = plotStyle.legend_fontsize;
+    const margin = plotMargin(hasY2, !!plotStyle.title_text);
+    const paperW = Math.max(1, plotStyle.plot_width - margin.l - margin.r);
+    const paperH = Math.max(1, plotStyle.plot_height - margin.t - margin.b);
+
+    const rowH = size * 1.7;
+    const height = Math.min(0.35, ((rows.length + 2) * rowH) / paperH);   // header is 2 lines
+
+    // Width fitted to the content instead of the full figure: stretching
+    // `columnwidth` over domain [0,1] is what produced the huge column gaps.
+    // 0.58em per character is a safe average for a proportional face; 18px is
+    // Plotly's own cell padding.
+    const chars = grid.widths.reduce((a, b) => a + b, 0);
+    const naturalW = chars * size * 0.58 + grid.widths.length * 18;
+    const width = Math.min(1, naturalW / paperW);
+
+    // Clearance below the plot: whatever the X axis actually draws there —
+    // outward ticks, tick labels, and the axis title when there is one. A fixed
+    // constant here is exactly how the table ended up under the axis title.
+    const clearance =
+      (plotStyle.tick_direction === 'outside' ? plotStyle.tick_length : 0) +
+      plotStyle.tick_fontsize * 1.6 +
+      (plotStyle.x_axis_title ? plotStyle.axis_title_fontsize * 1.8 : 0) +
+      10;
+
+    return {
+      // Top of the table band + the axis decorations that sit above it.
+      axisBottom: Math.min(0.75, height + clearance / paperH),
+      trace: {
+        type: 'table' as const,
+        domain: { x: [0, width], y: [0, height] },
+        columnwidth: grid.widths,
+        header: {
+          // Two stacked lines: the grandeur once per group, then the stat.
+          // A Plotly table header is a single row (no colSpan), so this is how
+          // the repetition is factored out — see buildStatsGrid.
+          values: grid.headers.map((h, i) =>
+            `<b>${esc(grid.groups[i])}</b><br><b>${esc(h)}</b>`),
+          align: grid.aligns,
+          height: rowH * 2,   // two stacked lines (group + stat)
+          // No rules, no fill: the default preset has no gridlines anywhere and
+          // the legend has no frame — a boxed grid was the only ruled object in
+          // the figure. Hierarchy comes from the bold header instead.
+          fill: { color: 'rgba(0,0,0,0)' },
+          font: { family: plotStyle.font_family, color: plotStyle.text_color, size },
+          line: { width: 0, color: 'rgba(0,0,0,0)' },
+        },
+        cells: {
+          values: grid.columns.map(col => col.map(esc)),
+          align: grid.aligns,
+          height: rowH,
+          fill: { color: 'rgba(0,0,0,0)' },
+          font: { family: plotStyle.font_family, color: plotStyle.text_color, size },
+          line: { width: 0, color: 'rgba(0,0,0,0)' },
+        },
+      },
+    };
+  }, [statsVisible, files, shownFiles, extractedColumns, statsHiddenExtracted, statsCols,
+      seriesTokenIndices, extractedDecimals, hasY2, plotStyle.legend_fontsize, plotStyle.text_color,
+      plotStyle.font_family, plotStyle.plot_height, plotStyle.plot_width, plotStyle.title_text,
+      plotStyle.tick_direction, plotStyle.tick_length, plotStyle.tick_fontsize,
+      plotStyle.x_axis_title, plotStyle.axis_title_fontsize]);
+
+  // Table LAST: handleClick indexes traces by curveNumber, so the scatter traces
+  // must keep their positions.
+  const plotData: Data[] = useMemo(
+    () => (statsTable ? [...data, statsTable.trace as unknown as Data] : data),
+    [data, statsTable],
+  );
 
   const layout: Partial<Layout> = useMemo(() => {
     const fg = plotStyle.text_color;
@@ -235,7 +358,7 @@ export function PlotView() {
       font: { ...baseFont, size: plotStyle.tick_fontsize },
       width: plotStyle.plot_width,
       height: plotStyle.plot_height,
-      margin: { l: 70, r: hasY2 ? 70 : 30, t: plotStyle.title_text ? 50 : 30, b: 60 },
+      margin: plotMargin(hasY2, !!plotStyle.title_text),
       legend: {
         ...legendPos,
         font: { ...baseFont, size: plotStyle.legend_fontsize },
@@ -322,16 +445,33 @@ export function PlotView() {
     // newshape sets the color of freshly drawn rect/line (Plotly draw tools).
     // (newshape isn't in the installed Plotly types → set via a narrow cast.)
     (l as { newshape?: unknown }).newshape = { line: { color: drawColor, width: 2 } };
-    if (drawingsVisible) {
-      if (drawings.shapes.length) l.shapes = drawings.shapes as Layout['shapes'];
-      if (drawings.annotations.length) l.annotations = drawings.annotations as Layout['annotations'];
+    if (drawingsVisible && drawings.shapes.length) l.shapes = drawings.shapes as Layout['shapes'];
+    if (drawingsVisible && drawings.annotations.length) {
+      l.annotations = drawings.annotations as Layout['annotations'];
+    }
+
+    // The stats table owns a band at the bottom: lift the cartesian area above
+    // it so the two never overlap. This is what an annotation could NOT do —
+    // Plotly reserves no space for annotations, they just float over the data.
+    if (statsTable && l.yaxis) {
+      const top = statsTable.axisBottom;
+      (l.yaxis as { domain?: number[] }).domain = [top, 1];
+      if (l.yaxis2) (l.yaxis2 as { domain?: number[] }).domain = [top, 1];
+
+      // Legend y is in PAPER coords, so 'lower left/right/center' sit at y=0 —
+      // right on top of the table. Remap the in-figure positions onto the
+      // shrunken plot band so the legend follows the axes, not the paper.
+      // Outside placements (y<0 or y>1) are deliberate and left alone.
+      if (l.legend && typeof l.legend.y === 'number' && l.legend.y >= 0 && l.legend.y <= 1) {
+        l.legend = { ...l.legend, y: top + l.legend.y * (1 - top) };
+      }
     }
 
     // Driven by our toolbar since Plotly's modebar is hidden.
     l.dragmode = dragMode as Layout['dragmode'];
 
     return l;
-  }, [plotStyle, hasY2, traces, drawings, drawingsVisible, drawColor, dragMode]);
+  }, [plotStyle, hasY2, traces, drawings, drawingsVisible, drawColor, dragMode, statsTable]);
 
   const config: Partial<Config> = useMemo(() => ({
     responsive: true,
@@ -376,6 +516,34 @@ export function PlotView() {
       }
     }
   }, [setPlotStyle, setDrawings]);
+
+  // Legend click drives OUR state and we return false, so Plotly never keeps a
+  // parallel visibility of its own that the next re-render would silently drop.
+  const legendLabels = useCallback(() => {
+    const seen: string[] = [];
+    traces.forEach(t => {
+      const label = t.file_id ? fileStyles[t.file_id]?.legend_label || '' : '';
+      if (label && !seen.includes(label)) seen.push(label);
+    });
+    return seen;
+  }, [traces, fileStyles]);
+
+  const labelOfCurve = useCallback((curveNumber: number) => {
+    const t = traces[curveNumber];
+    return t?.file_id ? fileStyles[t.file_id]?.legend_label || '' : '';
+  }, [traces, fileStyles]);
+
+  const handleLegendClick = useCallback((e: { curveNumber: number }) => {
+    const label = labelOfCurve(e.curveNumber);
+    if (label) toggleHiddenLegend(label);
+    return false;
+  }, [labelOfCurve, toggleHiddenLegend]);
+
+  const handleLegendDoubleClick = useCallback((e: { curveNumber: number }) => {
+    const label = labelOfCurve(e.curveNumber);
+    if (label) isolateLegend(label, legendLabels());
+    return false;
+  }, [labelOfCurve, isolateLegend, legendLabels]);
 
   // Click on curve → show popup
   const handleClick = useCallback((event: Readonly<PlotMouseEvent>) => {
@@ -524,7 +692,9 @@ export function PlotView() {
 
       <div className="plot-canvas">
         <Plot
-          data={data}
+          data={plotData}
+          onLegendClick={handleLegendClick}
+          onLegendDoubleClick={handleLegendDoubleClick}
           layout={layout}
           config={config}
           useResizeHandler

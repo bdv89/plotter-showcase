@@ -1,22 +1,15 @@
-import { useMemo, Fragment } from 'react';
 import { useAppStore } from '../store/appStore';
 import { PALETTE_NAMES, displayTokens, seriesColorIndices } from '../utils/coloring';
+import { SeriesPicker } from './SeriesPicker';
 
 // Shared styling controls (Group by / Palette / Legend), used both in the DATA
 // toolbar and above the Plot. All state lives in the store so both stay in sync.
 export function StyleBar() {
   const files = useAppStore(s => s.files);
   const seriesTokenIndices = useAppStore(s => s.seriesTokenIndices);
-  const toggleSeriesToken = useAppStore(s => s.toggleSeriesToken);
-  const clearSeries = useAppStore(s => s.clearSeries);
   const paletteName = useAppStore(s => s.paletteName);
   const applyPalette = useAppStore(s => s.applyPalette);
   const patchStyles = useAppStore(s => s.patchStyles);
-
-  const exampleTokens = useMemo(
-    () => (files.length > 0 ? displayTokens(files[0].filename) : []),
-    [files],
-  );
 
   const autoLegendFromNames = () => {
     patchStyles(Object.fromEntries(
@@ -48,29 +41,7 @@ export function StyleBar() {
 
   return (
     <div className="style-row">
-      {exampleTokens.length > 0 && (
-        <div className="control-group series-picker" title="Define what makes a series (click a part of the example name)">
-          <span className="control-label">Group by</span>
-          <button
-            className={`token-chip ${seriesTokenIndices.length === 0 ? 'active' : ''}`}
-            onClick={clearSeries}
-          >
-            Auto
-          </button>
-          <span className="series-eg">e.g.</span>
-          {exampleTokens.map((tok, i) => (
-            <Fragment key={i}>
-              {i > 0 && <span className="series-sep">·</span>}
-              <button
-                className={`token-chip ${seriesTokenIndices.includes(i) ? 'active' : ''}`}
-                onClick={() => toggleSeriesToken(i)}
-              >
-                {tok}
-              </button>
-            </Fragment>
-          ))}
-        </div>
-      )}
+      <SeriesPicker />
       <div className="control-group">
         <span className="control-label">Palette</span>
         <select

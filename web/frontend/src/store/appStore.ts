@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { FileInfo, FileStyle, PlotTrace, StyleSettings, ProcessingSettings } from '../types';
+import type { FileInfo, FileStyle, PlotTrace, StyleSettings, ProcessingSettings, ExtractRecipe } from '../types';
 import { COLOR_PALETTES, PALETTE_NAMES, seriesColorIndices } from '../utils/coloring';
+import { STAT_KEYS, clampDecimals, type StatKey } from '../utils/stats';
 
 // A single overlay layer of Plotly shapes (rect/line) + annotations (arrow/text),
 // stored loosely (Plotly objects) and re-injected into the plot layout.
@@ -8,6 +9,26 @@ export interface PlotDrawings {
   shapes: unknown[];
   annotations: unknown[];
 }
+
+// What the stats box remembers between sessions. Rides inside plot_style (an
+// opaque dict backend-side) exactly like `drawings` — so no backend change.
+export interface StatsBoxState {
+  visible: boolean;
+  cols: StatKey[];
+  hiddenExtracted: string[];
+  // Decimals per extracted column. Display only — the stored value keeps all the
+  // digits the backend sent, so changing this never needs a re-extraction.
+  decimals: Record<string, number>;
+}
+
+const DEFAULT_STATS: StatsBoxState = {
+  // Off par défaut : le tableau de stats est un ornement de la figure, il ne
+  // doit pas s'inviter sur le plot dès qu'une valeur est extraite.
+  visible: false,
+  cols: ['n', 'mean', 'sd'],
+  hiddenExtracted: [],
+  decimals: {},
+};
 
 const COLOR_PALETTE = [
   '#e27d60', '#85cdca', '#e8a87c', '#c38d9e', '#41b3a3', '#659dbd',
@@ -139,6 +160,25 @@ interface AppStore {
   clearDrawings: () => void;
   toggleDrawings: () => void;
 
+  // Population stats box — one state, two renderers (Extract tab table + the
+  // in-figure Plotly annotation), so both always agree.
+  statsVisible: boolean;
+  statsCols: StatKey[];
+  statsHiddenExtracted: string[];
+  // Legend entries the user clicked off. Plotly keeps its own `legendonly`
+  // state, but `data` is rebuilt from the store on every render, so that state
+  // was silently wiped — and it never reached the stats table either.
+  // Keyed by legend LABEL, because PlotView dedups the legend by label and
+  // groups the traces with legendgroup: one entry = one label.
+  hiddenLegend: string[];
+  toggleHiddenLegend: (label: string) => void;
+  isolateLegend: (label: string, allLabels: string[]) => void;
+  extractedDecimals: Record<string, number>;
+  setExtractedDecimals: (column: string, decimals: number) => void;
+  toggleStatsVisible: () => void;
+  toggleStatCol: (k: StatKey) => void;
+  toggleStatsExtracted: (name: string) => void;
+
   // Plot data
   traces: PlotTrace[];
   setTraces: (traces: PlotTrace[]) => void;
@@ -155,6 +195,11 @@ interface AppStore {
   setExtractedColumn: (fileId: string, colName: string, value: number, precision: number) => void;
   removeExtractedColumn: (name: string) => void;
   clearExtractedColumns: () => void;
+  // Les réglages qui ont produit chaque colonne, pour pouvoir la rejouer sur les
+  // fichiers cochés du moment (ajout de données après coup). Voyage dans
+  // plot_style comme `drawings`/`stats` → zéro modif backend.
+  extractRecipes: Record<string, ExtractRecipe>;
+  setExtractRecipe: (colName: string, recipe: ExtractRecipe) => void;
   restorePool: (data: {
     files: FileInfo[];
     styles: Record<string, FileStyle>;
@@ -313,6 +358,40 @@ export const useAppStore = create<AppStore>((set, get) => ({
   clearDrawings: () => set({ drawings: { shapes: [], annotations: [] } }),
   toggleDrawings: () => set({ drawingsVisible: !get().drawingsVisible }),
 
+  // Stats box
+  statsVisible: DEFAULT_STATS.visible,
+  statsCols: [...DEFAULT_STATS.cols],
+  statsHiddenExtracted: [],
+  hiddenLegend: [],
+  toggleHiddenLegend: (label) => {
+    const cur = get().hiddenLegend;
+    set({ hiddenLegend: cur.includes(label) ? cur.filter(x => x !== label) : [...cur, label] });
+  },
+  // Double-click on a legend entry: show only that one, or restore everything
+  // if it is already the only visible one.
+  isolateLegend: (label, allLabels) => {
+    const others = allLabels.filter(l => l !== label);
+    const isolated = others.length > 0 && others.every(l => get().hiddenLegend.includes(l));
+    set({ hiddenLegend: isolated ? [] : others });
+  },
+  extractedDecimals: {},
+  setExtractedDecimals: (column, decimals) => set({
+    extractedDecimals: { ...get().extractedDecimals, [column]: clampDecimals(decimals) },
+  }),
+  toggleStatsVisible: () => set({ statsVisible: !get().statsVisible }),
+  // Rebuilt from STAT_KEYS so the columns keep their canonical order whatever
+  // the click order was.
+  toggleStatCol: (k) => {
+    const cur = get().statsCols;
+    const on = cur.includes(k);
+    set({ statsCols: STAT_KEYS.filter(s => (s === k ? !on : cur.includes(s))) });
+  },
+  // Blacklist, not whitelist: a freshly extracted column shows up by default.
+  toggleStatsExtracted: (name) => {
+    const cur = get().statsHiddenExtracted;
+    set({ statsHiddenExtracted: cur.includes(name) ? cur.filter(x => x !== name) : [...cur, name] });
+  },
+
   // Plot data
   traces: [],
   setTraces: (traces) => set({ traces }),
@@ -344,9 +423,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       void _drop;
       next[fileId] = rest;
     }
-    set({ extractedColumns: next });
+    const { [name]: _dropRecipe, ...recipes } = get().extractRecipes;
+    void _dropRecipe;
+    set({ extractedColumns: next, extractRecipes: recipes });
   },
-  clearExtractedColumns: () => set({ extractedColumns: {} }),
+  clearExtractedColumns: () => set({ extractedColumns: {}, extractRecipes: {} }),
+  extractRecipes: {},
+  setExtractRecipe: (colName, recipe) => set({
+    extractRecipes: { ...get().extractRecipes, [colName]: recipe },
+  }),
   restorePool: (data) => {
     const styles: Record<string, FileStyle> = {};
     const checked = new Set<string>();
@@ -373,11 +458,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (data.plot_style) {
       // Drawings ride inside plot_style (backend stores it as an opaque dict) —
       // extract them into their own slice and keep plotStyle clean.
-      const { drawings, ...styleRest } = data.plot_style as StyleSettings & { drawings?: PlotDrawings };
+      const { drawings, stats, hiddenLegend, recipes, ...styleRest } = data.plot_style as StyleSettings & {
+        drawings?: PlotDrawings; stats?: Partial<StatsBoxState>; hiddenLegend?: string[];
+        recipes?: Record<string, ExtractRecipe>;
+      };
       update.plotStyle = { ...DEFAULT_STYLE, ...styleRest };
       update.drawings = drawings && Array.isArray(drawings.shapes)
         ? { shapes: drawings.shapes, annotations: drawings.annotations || [] }
         : { shapes: [], annotations: [] };
+      // Same trick as drawings: the stats box travels inside plot_style.
+      update.statsVisible = stats?.visible ?? DEFAULT_STATS.visible;
+      update.statsCols = Array.isArray(stats?.cols) ? stats.cols : [...DEFAULT_STATS.cols];
+      update.statsHiddenExtracted = Array.isArray(stats?.hiddenExtracted) ? stats.hiddenExtracted : [];
+      update.extractedDecimals = stats?.decimals ?? {};
+      update.hiddenLegend = Array.isArray(hiddenLegend) ? hiddenLegend : [];
+      // Un pool sauvé avant ce champ n'a pas de recettes : ses colonnes restent
+      // affichées, elles ne sont simplement pas rejouables.
+      update.extractRecipes = recipes ?? {};
     }
     if (data.processing) {
       update.processing = { ...DEFAULT_PROCESSING, ...data.processing };

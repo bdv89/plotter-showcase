@@ -33,6 +33,27 @@ export function displayTokens(filename: string): string[] {
 }
 
 /**
+ * Identity of a population/series: the picked tokens, lowercased, joined by '|'.
+ * No token picked -> '' (every file lands in the same, single group).
+ * NB: unlike seriesColorIndices() this has NO anti-monochrome fallback — a single
+ * group of n files is a perfectly valid population, it is only a bad palette.
+ */
+export function seriesKey(filename: string, seriesTokenIndices?: number[]): string {
+  if (!seriesTokenIndices || seriesTokenIndices.length === 0) return '';
+  const tokens = tokenize(stripExt(filename));
+  return seriesTokenIndices.slice().sort((a, b) => a - b).map(i => tokens[i] ?? '').join('|');
+}
+
+/** Readable label of that same population (original case). No token -> filename. */
+export function seriesLabel(filename: string, seriesTokenIndices?: number[]): string {
+  const bare = stripExt(filename);
+  if (!seriesTokenIndices || seriesTokenIndices.length === 0) return bare;
+  const tokens = displayTokens(filename);
+  return seriesTokenIndices.slice().sort((a, b) => a - b)
+    .map(i => tokens[i] ?? '').filter(Boolean).join(' ') || bare;
+}
+
+/**
  * Color index per file, returned as an array parallel to `filenames`
  * (indexed by file position, so identical filenames never collapse).
  * - No token selected (Auto): one distinct color per file.
@@ -44,11 +65,7 @@ export function seriesColorIndices(filenames: string[], seriesTokenIndices?: num
   if (!seriesTokenIndices || seriesTokenIndices.length === 0) {
     return filenames.map((_, i) => i);
   }
-  const sorted = seriesTokenIndices.slice().sort((a, b) => a - b);
-  const keys = filenames.map(fn => {
-    const tokens = tokenize(stripExt(fn));
-    return sorted.map(i => tokens[i] ?? '').join('|');
-  });
+  const keys = filenames.map(fn => seriesKey(fn, seriesTokenIndices));
   const uniqueKeys = [...new Set(keys)].sort();
   if (uniqueKeys.length <= 1 && filenames.length > 1) {
     return filenames.map((_, i) => i);

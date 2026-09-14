@@ -970,3 +970,239 @@ $env:VITE_API_URL = '/plotter/api'; npm run build -- --base=/plotter/
 **Prevention** — `web/frontend/scripts/check-build.mjs`, branché en **`postbuild`** dans `package.json` : npm le lance après *chaque* `npm run build`, y compris manuel. Il extrait la base réellement écrite dans `dist/index.html` et exige que le bundle contienne `<base>api` ; sinon il sort en code 1 avec la commande correcte à recopier. C'est une vérification de **cohérence interne** : rien n'est codé en dur, elle vaut pour `/plotter/`, `/plotter-exp/` et la racine. Il contrôle au passage l'absence d'import nu (cf. « Page blanche en prod »).
 
 ⚠️ Le garde-fou rejette **après** l'écriture du `dist/` : un build refusé laisse donc un `dist/` cassé sur le disque. Les scripts de promotion s'arrêtent (`$LASTEXITCODE -ne 0` → `throw`) avant de redémarrer quoi que ce soit, mais la prod étant servie **directement** depuis `dist/`, un build refusé la casse jusqu'au rebuild correct. L'échec est bruyant : relancer immédiatement avec la commande affichée.
+
+## Un tableau simulé en annotation : ni aligné, ni capable de pousser les axes
+
+**Symptôme** — le tableau de stats posé dans la figure a ses **colonnes décalées
+par rapport aux titres**, et il **flotte par-dessus la courbe** : la zone de tracé
+ne se réduit pas pour lui faire de la place.
+
+**Cause** — première version : une **annotation** Plotly contenant un bloc de
+texte dont les colonnes tenaient par du bourrage d'espaces insécables en police
+monospace. Deux impasses, chacune structurelle :
+
+1. **L'alignement est typographique.** Il dépend de la police effectivement
+   appliquée au rendu. Dès que ce n'est pas exactement du monospace, ou que les
+   espaces sont traités autrement, la grille se décale. Aucun réglage ne fiabilise ça.
+2. **Une annotation ne réserve jamais de place.** En coordonnées `paper`, elle est
+   posée *au-dessus* du tracé. Plotly ne prévoit aucun mécanisme pour qu'une
+   annotation repousse les axes — contrairement à une légende ou à une marge.
+
+**Correctif** — utiliser un **vrai trace `table`** :
+
+```ts
+{ type: 'table', domain: { x: [0, 1], y: [0, height] },
+  columnwidth, header: { values, align }, cells: { values /* COLONNE-major */, align } }
+```
+
+…et rétrécir la bande cartésienne d'autant, ce que l'annotation ne pouvait pas faire :
+
+```ts
+if (statsTable && l.yaxis) {
+  const top = Math.min(0.9, statsTable.height + 0.08);
+  l.yaxis.domain = [top, 1];
+  if (l.yaxis2) l.yaxis2.domain = [top, 1];   // y2 « overlaying: y » doit suivre
+}
+```
+
+L'alignement devient **structurel** (header et cells partagent les mêmes colonnes,
+dans n'importe quelle police) et la zone de dessin se redimensionne réellement.
+
+**Et l'export ?** Le trace `table` se dessine dans `gd._fullLayout._paper`
+(`src/traces/table/plot.js:20`) — le SVG que `toSVG` sérialise
+(`src/snapshot/tosvg.js:32`). Il **part donc dans le PNG/SVG**, comme le reste.
+Le module est bien dans le bundle utilisé (`lib/index.js:47`).
+
+**Ce qu'on perd** — un trace se place par son `domain`, il ne se glisse pas à la
+souris comme une annotation. La position est un choix de mise en page, pas un
+geste.
+
+**Bénéfice collatéral** — un trace n'est **pas** une annotation, donc il ne
+traverse jamais `layout.annotations`. Toute la machinerie de filtrage qu'exigeait
+la version annotation (marqueur + exclusion dans `handleRelayout` pour éviter que
+la boîte soit capturée dans `drawings` et figée) **disparaît**.
+
+**Cells en COLONNE-major** — `cells.values` attend *un tableau par colonne*, pas
+par ligne. C'est l'inverse d'une table HTML ; `buildStatsGrid` (`utils/stats.ts`)
+produit directement la bonne forme.
+
+## `npm run build` nu écrase le dist que la prod sert en direct
+
+**Symptôme** — après un simple `npm run build` en session de dev, `/plotter/`
+part en page blanche et toutes ses requêtes API en 404. Rien ne l'annonce : le
+build affiche « built in 12s » et le contrôle de cohérence passe.
+
+**Cause** — le service `CSVPlotter` sert `web/frontend/dist` **en direct**
+(nginx `alias` sur ce dossier, cf. `deploy/services-plotter.conf`). Un build de
+dev l'écrit en base `/` au lieu de `/plotter/`. Comme `dist/` **n'est pas
+versionné**, l'ancien build est définitivement perdu — il n'y a rien à restaurer,
+seulement à reconstruire.
+
+**Correctif** — rebuild aux flags de déploiement :
+
+```powershell
+$env:VITE_API_URL='/plotter/api'; npm run build -- --base=/plotter/
+```
+
+⚠️ **Depuis PowerShell, pas depuis Git Bash.** Sous Git Bash (MSYS), un argument
+qui commence par `/` est converti en chemin Windows : `--base=/plotter/` devient
+`--base=/Program Files/Git/plotter/`. Et comme `VITE_API_URL` subit la **même**
+conversion, les deux valeurs restent cohérentes entre elles → `check-build.mjs`
+valide un dist pourtant inutilisable. Poser `MSYS_NO_PATHCONV=1` sinon.
+
+**Garde-fou** — `check-build.mjs` détecte désormais le cas (build en base `/` +
+service `CSVPlotter`/`CSVPlotter_Exp` en cours d'exécution) et affiche la commande
+de réparation. C'est un **avertissement**, pas un rejet : à ce stade le dist est
+déjà écrit, seule la reconstruction répare.
+
+**Ne pas** lancer `promote-exp-to-prod.ps1` pour réparer en cours de
+développement : son étape 1 est un `robocopy /MIR` de `260324-exp\web` vers
+`260324\web`, qui **supprime le code non encore propagé vers la beta**.
+
+## Un tableau flex écrasé à zéro par `flex-basis: auto`
+
+**Symptôme** — dans l'onglet Extract, le tableau de résumé du bas **disparaît**.
+Il est pourtant bien dans le DOM, sans erreur console : il est simplement haut
+de **0 pixel**.
+
+**Cause** — les deux blocs empilés déclaraient `flex-basis: auto` :
+
+```css
+.extract-values  { flex: 1 1 auto; min-height: 0; }   /* table des valeurs */
+.extract-summary { flex: 0 1 auto; min-height: 0; }   /* résumé */
+```
+
+Avec `basis: auto`, la taille initiale de chaque bloc est la hauteur de son
+**contenu**. La table des valeurs contient toutes les lignes de fichiers, donc
+la somme dépasse le conteneur et le navigateur doit **rétrécir** — en
+répartissant proportionnellement à la base. Le gros bloc encaisse peu en
+proportion, le petit prend presque tout, et `min-height: 0` l'autorise à tomber
+à zéro.
+
+Le déclencheur avait été un changement sans rapport apparent (`width: max-content`
++ `white-space: nowrap`), qui a fait grandir la base de la table des valeurs et
+rompu un équilibre qui ne tenait que par chance.
+
+**Correctif**
+
+```css
+.extract-values  { flex: 1 1 0;    min-height: 140px; }  /* base 0 */
+.extract-summary { flex: 0 0 auto; max-height: 50%; }    /* jamais comprimé */
+```
+
+`flex-basis: 0` sur l'élément qui grandit rend la répartition de l'espace
+**indépendante de la hauteur du contenu** — c'est le remède standard. Et
+`flex: 0 0 auto` sur le voisin garantit qu'il ne peut plus être comprimé.
+
+**Règle générale** — dans une colonne flex de hauteur fixe, un seul élément doit
+absorber l'espace, et il doit le faire avec `basis: 0`. Deux `basis: auto` qui se
+disputent la place produisent un gagnant proportionnel à son contenu, pas à son
+importance.
+
+**À vérifier aussi** — un conteneur intermédiaire sans `display: flex` annule
+silencieusement le `flex: 1` de son enfant (c'était le cas de `.stats-table-wrap`,
+dont la zone de défilement interne n'existait donc pas).
+
+## Plotly garde un état de visibilité que React écrase
+
+**Symptôme** — on masque une courbe en cliquant sa légende ; elle **revient
+toute seule** dès qu'on touche à autre chose (une couleur, une case cochée, un
+réglage). Et le tableau de stats de la figure continue de compter la courbe
+masquée.
+
+**Cause** — un clic de légende écrit `visible: 'legendonly'` dans l'état
+**interne** de Plotly. Or `data` est reconstruit depuis le store à chaque rendu
+et ne porte aucun `visible` : le rebuild remet donc tout à `true`. L'état vivait
+à un endroit que React ne connaissait pas, et que React piétinait.
+
+**Correctif** — reprendre l'événement, et **retourner `false`** pour que Plotly
+n'entretienne pas un état parallèle :
+
+```ts
+const handleLegendClick = useCallback((e: { curveNumber: number }) => {
+  const label = labelOfCurve(e.curveNumber);
+  if (label) toggleHiddenLegend(label);
+  return false;                       // <-- Plotly ne garde rien de son côté
+}, [labelOfCurve, toggleHiddenLegend]);
+```
+
+`data` calcule alors `visible` depuis le store, et tout ce qui dérive de « ce que
+la figure montre » (ici le tableau de stats, via `shownFiles`) suit
+automatiquement. Clé = le **label** de légende, puisque les entrées sont
+dédupliquées par label et groupées par `legendgroup`.
+
+⚠️ Intercepter `onLegendClick` neutralise aussi le **double-clic** natif
+(isoler une série) : il faut reprendre `onLegendDoubleClick` dans la foulée,
+sinon on supprime une fonctionnalité sans s'en rendre compte.
+
+**Règle générale** — le même piège que la capture d'annotations : dès qu'une
+bibliothèque tient un état que l'on reconstruit à chaque rendu, il faut soit le
+remonter dans le store, soit ne jamais reconstruire. Les deux à moitié donnent un
+bug intermittent.
+
+## Une valeur extraite sans la recette qui l'a produite
+
+**Symptôme** — on ajoute des fichiers après avoir extrait `max(Force)` : les
+nouvelles lignes affichent `-`. Pour les remplir il faut re-saisir tous les
+réglages **et** retaper le nom de colonne à l'identique — une faute de frappe et
+on crée une deuxième colonne au lieu de compléter la première.
+
+**Cause** — l'onglet Extract ne stockait que le **résultat**
+(`extractedColumns[file_id][nom] = value`), jamais les **entrées** (colonne,
+opération, X, intervalle, seuil). Un calcul dont on jette les paramètres n'est
+pas rejouable : le nom de colonne est alors la seule trace de la recette, et
+c'est une trace que l'humain doit re-taper de mémoire.
+
+**Correctif** — un slice `extractRecipes: Record<nomColonne, ExtractRecipe>`
+rempli au moment de l'extraction, et **un seul** chemin d'exécution partagé :
+
+```ts
+// « Extract » exécute une recette fraîche, « ↻ Re-extract » rejoue les enregistrées.
+const runRecipe = async (colName: string, recipe: ExtractRecipe) => { … }
+```
+
+Deux détails qui comptent :
+
+- **Le `processing` n'est PAS figé dans la recette** — on rejoue avec celui de la
+  session, comme `/plot-data`. Le figer recréerait le canal parallèle supprimé au
+  commit `726c2d6` (cf. « Le traitement s'appliquait à côté du chemin de plot ») :
+  une valeur calculée avec des réglages que l'écran n'affiche plus.
+- **Pas de mode « ne combler que les trous »** — `Re-extract` recalcule tout ce
+  qui est coché. Ne remplir que les cases vides laisserait survivre des valeurs
+  périmées à côté de valeurs fraîches, dans la même colonne, sans rien de visible.
+
+**Persistance** — les recettes voyagent dans `plot_style.recipes`, comme
+`drawings` / `stats` / `hiddenLegend` : **zéro modif backend**. Un pool sauvé
+avant ce champ garde ses colonnes mais elles ne sont pas rejouables — le bouton
+les ignore et l'annonce dans son statut, plutôt que d'échouer en silence.
+
+**Règle générale** — dès qu'un résultat affiché vient de paramètres saisis à la
+main, stocker les paramètres avec le résultat. Sinon le seul moyen de le
+reproduire est la mémoire de l'utilisateur.
+
+## « Mon changement n'apparaît pas » : aucun serveur dev ne tournait
+
+**Symptôme** — le code est modifié, `tsc`/`lint`/`tests` passent, le bouton est
+bien dans le JSX… et il est invisible dans le navigateur. On soupçonne une
+condition d'affichage, du CSS, le store — tout sauf le bon coupable.
+
+**Cause** — l'onglet ouvert pointait sur `/plotter/` (ou `/plotter-exp/`),
+c'est-à-dire un **`dist/` buildé**, pas le code source. Les services NSSM tournent
+en permanence : on peut très bien « avoir l'app ouverte » sans qu'aucun Vite ne
+tourne. Éditer `src/` n'a alors **strictement aucun effet visible**.
+
+**Diagnostic en deux commandes** — avant de chercher dans le code :
+
+```bash
+netstat -ano | grep LISTENING | grep -E ":(5173|5174|9099|9199)"   # un Vite tourne-t-il ?
+ls -l web/frontend/dist/index.html                                    # le dist date de quand ?
+grep -o 'src="[^"]*"' web/frontend/dist/index.html                    # base / ou /plotter/ ?
+```
+
+Un `dist/index.html` plus vieux que le fichier source qu'on vient d'éditer suffit
+à conclure. Ensuite : soit lancer `start-plotter.ps1` (dev, 5174), soit rebuilder
+la cible (⚠️ **depuis PowerShell**, cf. « `npm run build` nu écrase le dist »).
+
+**Règle générale** — avant de déboguer un symptôme visuel, vérifier **quel
+artefact** le navigateur charge. Un hash de bundle inchangé après un build, c'est
+un build qui n'a rien produit de neuf.
