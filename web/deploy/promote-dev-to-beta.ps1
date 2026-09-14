@@ -51,7 +51,7 @@ if (-not $Force) {
 
 # --- 1. Copie code dev -> beta (mêmes exclusions que l'install/maj : artefacts régénérables) ---
 # /MIR = miroir (supprime côté beta ce qui n'existe plus côté dev), hors dossiers exclus.
-Write-Host "[1/3] Copie du code dev -> beta…" -ForegroundColor Cyan
+Write-Host "[1/4] Copie du code dev -> beta…" -ForegroundColor Cyan
 & robocopy $DevWeb $BetaWeb /MIR /R:1 /W:1 /NP /XJ `
     /XD venv venv_win node_modules dist __pycache__ uploads logs .git .jj `
     /XF *.log
@@ -60,8 +60,25 @@ if ($LASTEXITCODE -ge 8) {          # robocopy : 0-7 = succès, >=8 = échec
     exit 1
 }
 
-# --- 2. Rebuild du frontend beta pour le sous-chemin /plotter-exp/ ---
-Write-Host "[2/3] Build frontend beta (base=/plotter-exp/)…" -ForegroundColor Cyan
+# --- 2. Sync des dependances backend (le venv est EXCLU du robocopy) ---
+# Sans ca, requirements.txt est promu mais jamais applique : une nouvelle
+# dependance (ex. le serveur MCP) fait echouer l'import de main.py et le
+# service ne redemarre plus DU TOUT. On installe donc AVANT le restart, et on
+# s'arrete net si l'install echoue (le service tourne encore l'ancien code).
+Write-Host "[2/4] Sync des dependances backend (venv_win)..." -ForegroundColor Cyan
+$venvPy = Join-Path $BetaWeb 'backend\venv_win\Scripts\python.exe'
+if (-not (Test-Path $venvPy)) {
+    Write-Host "venv introuvable : $venvPy" -ForegroundColor Red
+    exit 1
+}
+& $venvPy -m pip install --quiet --disable-pip-version-check -r (Join-Path $BetaWeb 'backend\requirements.txt')
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "pip install a echoue : on NE redemarre PAS." -ForegroundColor Red
+    exit 1
+}
+
+# --- 3. Rebuild du frontend beta pour le sous-chemin /plotter-exp/ ---
+Write-Host "[3/4] Build frontend beta (base=/plotter-exp/)…" -ForegroundColor Cyan
 Push-Location (Join-Path $BetaWeb 'frontend')
 try {
     # Toujours (pas seulement si node_modules manque) : le dev peut avoir ajouté une dep
@@ -75,8 +92,8 @@ try {
     Pop-Location
 }
 
-# --- 3. Redémarrage du backend beta + health check ---
-Write-Host "[3/3] Redémarrage du service CSVPlotter_Exp…" -ForegroundColor Cyan
+# --- 4. Redémarrage du backend beta + health check ---
+Write-Host "[4/4] Redémarrage du service CSVPlotter_Exp…" -ForegroundColor Cyan
 Restart-Service -Name 'CSVPlotter_Exp' -Force
 Start-Sleep -Seconds 2
 try {

@@ -2,6 +2,7 @@
 
 import os
 import shutil
+from contextlib import asynccontextmanager
 
 from api.extract import router as extract_router
 from api.metrics import router as metrics_router
@@ -14,10 +15,36 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from mcp_server import mcp
 from sessions import cleanup_expired, get_session, manager, session_db_path
 from state import AppState
 
-app = FastAPI(title="CSV Plotter API", version="0.2.0")
+# Serveur MCP (LLM) monté plus bas sur /mcp. streamable_http_app() doit être
+# appelé AVANT d'accéder à mcp.session_manager (créé paresseusement).
+_mcp_app = mcp.streamable_http_app()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Démarrage + gestionnaire de sessions MCP.
+
+    Un sous-app monté ne voit pas son lifespan exécuté : sans ce `session_manager.run()`,
+    le premier appel MCP casse. Et FastAPI ignore les handlers @app.on_event dès qu'un
+    lifespan est fourni — d'où le démarrage rapatrié ici.
+    """
+    print("🟢 CSV Plotter API starting (multi-tenant)")
+    print(f"🟡 Upload dir: {UPLOAD_DIR}")
+    print(f"🟡 Sessions dir: {SESSIONS_DIR}")
+    print(f"🟡 Share path: {SHARE_PATH or '(not set)'}")
+    metrics.init_metrics(METRICS_DB)  # connection-tracking DB
+    print(f"🟡 Metrics DB: {METRICS_DB}")
+    cleanup_expired()  # purge abandoned sessions from disk on boot
+    async with mcp.session_manager.run():
+        print("🟢 MCP endpoint ready on /mcp")
+        yield
+
+
+app = FastAPI(title="CSV Plotter API", version="0.2.0", lifespan=lifespan)
 
 # CORS still allowed for dev (frontend on a different port). In production the
 # built frontend is served same-origin (below), so CORS is a no-op there.
@@ -87,16 +114,8 @@ def reset_state(state: AppState = Depends(get_session)):
     return {"status": "reset", "files_cleared": count}
 
 
-@app.on_event("startup")
-def startup():
-    print("🟢 CSV Plotter API starting (multi-tenant)")
-    print(f"🟡 Upload dir: {UPLOAD_DIR}")
-    print(f"🟡 Sessions dir: {SESSIONS_DIR}")
-    print(f"🟡 Share path: {SHARE_PATH or '(not set)'}")
-    metrics.init_metrics(METRICS_DB)  # connection-tracking DB
-    print(f"🟡 Metrics DB: {METRICS_DB}")
-    cleanup_expired()  # purge abandoned sessions from disk on boot
-
+# MCP avant le StaticFiles sur "/" : Starlette résout les mounts dans l'ordre.
+app.mount("/mcp", _mcp_app)
 
 # Serve the built frontend (npm run build → dist/) same-origin at "/".
 # Mounted LAST so /api/* routes take precedence. Skipped if not built yet (dev).

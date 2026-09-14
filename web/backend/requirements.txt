@@ -9,3 +9,8 @@ PyWavelets==1.9.0
 pyarrow==24.0.0
 openpyxl==3.1.5
 python-multipart==0.0.29
+
+# Serveur MCP intégré (mcp_server.py) : permet à une LLM de piloter l'app.
+# matplotlib ne sert QU'À la figure de lecture du MCP, jamais au frontend.
+mcp==1.26.0
+matplotlib==3.10.8
