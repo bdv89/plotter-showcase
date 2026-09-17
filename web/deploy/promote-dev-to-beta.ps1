@@ -60,41 +60,46 @@ if ($LASTEXITCODE -ge 8) {          # robocopy : 0-7 = succès, >=8 = échec
     exit 1
 }
 
-# --- 2. Sync des dependances backend (le venv est EXCLU du robocopy) ---
-# Sans ca, requirements.txt est promu mais jamais applique : une nouvelle
-# dependance (ex. le serveur MCP) fait echouer l'import de main.py et le
-# service ne redemarre plus DU TOUT. On installe donc AVANT le restart, et on
-# s'arrete net si l'install echoue (le service tourne encore l'ancien code).
-Write-Host "[2/4] Sync des dependances backend (venv_win)..." -ForegroundColor Cyan
+# --- 2-3. Service ARRETE : sync des dependances backend + rebuild du frontend ---
+# Le venv est EXCLU du robocopy : sans ce pip install, requirements.txt est promu mais
+# jamais applique, et une nouvelle dependance (ex. le serveur MCP) empeche main.py de
+# s'importer — le service ne redemarre plus DU TOUT.
+# Le service est arrete AVANT pip : tant qu'il tourne, venv_win\Scripts\uvicorn.exe est
+# verrouille et toute montee de version d'uvicorn echoue en WinError 32 (vecu le 15/09).
+# Il est relance quoi qu'il arrive (finally), meme si pip ou le build echoue.
 $venvPy = Join-Path $BetaWeb 'backend\venv_win\Scripts\python.exe'
 if (-not (Test-Path $venvPy)) {
     Write-Host "venv introuvable : $venvPy" -ForegroundColor Red
     exit 1
 }
-& $venvPy -m pip install --quiet --disable-pip-version-check -r (Join-Path $BetaWeb 'backend\requirements.txt')
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "pip install a echoue : on NE redemarre PAS." -ForegroundColor Red
-    exit 1
-}
-
-# --- 3. Rebuild du frontend beta pour le sous-chemin /plotter-exp/ ---
-Write-Host "[3/4] Build frontend beta (base=/plotter-exp/)…" -ForegroundColor Cyan
-Push-Location (Join-Path $BetaWeb 'frontend')
+Write-Host "Arret du service CSVPlotter_Exp (libere les binaires du venv)..." -ForegroundColor Cyan
+Stop-Service -Name 'CSVPlotter_Exp' -Force
 try {
-    # Toujours (pas seulement si node_modules manque) : le dev peut avoir ajouté une dep
-    # depuis la dernière promo → sinon `tsc -b` casse sur un module absent côté beta.
-    npm install
-    if ($LASTEXITCODE -ne 0) { throw "npm install a échoué (code $LASTEXITCODE)." }
-    $env:VITE_API_URL = '/plotter-exp/api'
-    npm run build -- --base=/plotter-exp/
-    if ($LASTEXITCODE -ne 0) { throw "npm run build a échoué (code $LASTEXITCODE)." }
-} finally {
-    Pop-Location
-}
+    Write-Host "[2/4] Sync des dependances backend (venv_win)..." -ForegroundColor Cyan
+    # PAS de --quiet : il masque le message d'erreur de pip. Vecu le 15/09 — l'echec
+    # (uvicorn.exe verrouille) n'a rien affiche et le script s'est arrete sans rien dire.
+    & $venvPy -m pip install --disable-pip-version-check -r (Join-Path $BetaWeb 'backend\requirements.txt')
+    if ($LASTEXITCODE -ne 0) { throw "pip install a echoue (code $LASTEXITCODE)." }
 
-# --- 4. Redémarrage du backend beta + health check ---
-Write-Host "[4/4] Redémarrage du service CSVPlotter_Exp…" -ForegroundColor Cyan
-Restart-Service -Name 'CSVPlotter_Exp' -Force
+    # --- 3. Rebuild du frontend beta pour le sous-chemin /plotter-exp/ ---
+    Write-Host "[3/4] Build frontend beta (base=/plotter-exp/)…" -ForegroundColor Cyan
+    Push-Location (Join-Path $BetaWeb 'frontend')
+    try {
+        # Toujours (pas seulement si node_modules manque) : le dev peut avoir ajouté une dep
+        # depuis la dernière promo → sinon `tsc -b` casse sur un module absent côté beta.
+        npm install
+        if ($LASTEXITCODE -ne 0) { throw "npm install a échoué (code $LASTEXITCODE)." }
+        $env:VITE_API_URL = '/plotter-exp/api'
+        npm run build -- --base=/plotter-exp/
+        if ($LASTEXITCODE -ne 0) { throw "npm run build a échoué (code $LASTEXITCODE)." }
+    } finally {
+        Pop-Location
+    }
+} finally {
+    # --- 4. Démarrage du backend beta (toujours) + health check ---
+    Write-Host "[4/4] Démarrage du service CSVPlotter_Exp…" -ForegroundColor Cyan
+    Start-Service -Name 'CSVPlotter_Exp'
+}
 Start-Sleep -Seconds 2
 try {
     $health = Invoke-RestMethod -Uri 'http://127.0.0.1:9199/api/health' -TimeoutSec 5
