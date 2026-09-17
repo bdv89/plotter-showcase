@@ -1096,6 +1096,145 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-modal);
 }
 
+/* ======= Tutoriel (bouton Tuto) ======= */
+.modal.modal-tutorial {
+  width: min(900px, 94vw);
+  max-height: 88vh;
+}
+
+.tutorial-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
+}
+
+.tutorial-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.tutorial-steps button {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  text-align: left;
+  font-size: 12px;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+}
+
+/* Même spécificité que la règle globale button:hover:not(:disabled), sinon
+   elle impose sa bordure et son fond aux étapes survolées. */
+.tutorial-steps button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: transparent;
+}
+
+.tutorial-steps button.active,
+.tutorial-steps button.active:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+.tutorial-step-num {
+  font-family: var(--font-mono, monospace);
+  color: var(--accent);
+}
+
+.tutorial-content {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tutorial-content h4 {
+  font-size: 16px;
+}
+
+.tutorial-content p,
+.tutorial-content li {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.tutorial-content ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tutorial-content code {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  padding: 0 4px;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+
+/* align-self + img width:auto : une petite capture (panneau, en-tête) garde sa
+   taille réelle au lieu d'être étirée — floue — sur toute la largeur. */
+.tutorial-shot {
+  display: block;
+  align-self: flex-start;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.tutorial-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.tutorial-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.tutorial-progress {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  .tutorial-body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .tutorial-steps {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .tutorial-steps button {
+    width: auto;
+  }
+}
+
 .modal-header {
   display: flex;
   align-items: center;

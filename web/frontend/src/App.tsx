@@ -6,6 +6,7 @@ import { ProcessingPanel } from './components/ProcessingPanel';
 import { ExtractPanel } from './components/ExtractPanel';
 import { StatsBar } from './components/StatsBar';
 import { HelpModal } from './components/HelpModal';
+import { TutorialModal } from './components/TutorialModal';
 import { MetricsView } from './components/MetricsView';
 import { useAppStore } from './store/appStore';
 import { exportPool, loadPool, uploadFiles, getSessionState } from './api/client';
@@ -15,6 +16,7 @@ import './App.css';
 
 function App() {
   const [helpOpen, setHelpOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [poolStatus, setPoolStatus] = useState('');
   const [activeSection, setActiveSection] = useState('page-data');
   const [dragOver, setDragOver] = useState(false);
@@ -36,7 +38,7 @@ function App() {
 
       // "?" opens help, Escape closes it (not while typing in a field).
       if (!typing && e.key === '?') { e.preventDefault(); setHelpOpen(true); return; }
-      if (e.key === 'Escape') { setHelpOpen(false); }
+      if (e.key === 'Escape') { setHelpOpen(false); setTutorialOpen(false); }
 
       // Group by tokens — Alt+Shift+1..9 toggle / Alt+Shift+0 Auto, on DATA + Plot.
       if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && !typing) {
@@ -235,6 +237,13 @@ function App() {
             ?
           </button>
           <button
+            className="help-button"
+            onClick={() => setTutorialOpen(true)}
+            title="Tutoriel pas à pas"
+          >
+            Tuto
+          </button>
+          <button
             className="theme-toggle"
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -296,6 +305,7 @@ function App() {
       </div>
 
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <TutorialModal open={tutorialOpen} onClose={() => setTutorialOpen(false)} />
     </div>
   );
 }
