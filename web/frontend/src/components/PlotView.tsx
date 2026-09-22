@@ -697,8 +697,6 @@ export function PlotView() {
           onLegendDoubleClick={handleLegendDoubleClick}
           layout={layout}
           config={config}
-          useResizeHandler
-          style={{ width: '100%', height: '100%' }}
           onRelayout={handleRelayout}
           onClick={handleClick}
         />

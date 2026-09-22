@@ -127,8 +127,6 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .page-processing {
@@ -707,6 +705,16 @@ input[type="checkbox"] {
 .plot-canvas {
   flex: 1;
   min-height: 0;
+  /* La figure est en pixels fixes (plot_width x plot_height = la figure exportee).
+     Sur petit ecran elle deborde : on defile au lieu de rogner. margin:auto centre
+     quand ca rentre ; un centrage flex rendrait le debordement gauche/haut
+     inatteignable. */
+  overflow: auto;
+  display: flex;
+}
+
+.plot-canvas > * {
+  margin: auto;
 }
 
 /* Ceinture et bretelles cote sous-titre : l'element existe des que le titre est
