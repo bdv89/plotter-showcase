@@ -96,7 +96,7 @@ Puis `Restart-Service Dashboard` (admin) → Plotter apparaît (health vert) et 
 |---|---|---|
 | `UPLOAD_DIR` | uploads + cache | `C:\ProgramData\Plotter\uploads` |
 | `SESSIONS_DIR` | persistance session `<sid>.db` | `…\uploads\sessions` |
-| `SHARE_PATH` | dossier partagé : pools listés par `/api/pool/list` **et seule porte d'entrée des données du MCP** | *(vide)* — **à poser pour activer le MCP** |
+| `SHARE_PATH` | dossier partagé : pools listés par `/api/pool/list`, **seule porte d'entrée des données du MCP** et racine des dossiers proposés par **Watch** (suivi de dossier, `api/watch.py`) | *(vide)* — **à poser pour activer le MCP et Watch** |
 | `MAX_FILES` | fichiers par session | `300` |
 | `MAX_SESSIONS_IN_MEMORY` | sessions chaudes en RAM (LRU ; ≈ pic de concurrence) | `16` |
 | `SESSION_TTL` | éviction RAM après inactivité (s) ; non destructif | `28800` (8 h) |

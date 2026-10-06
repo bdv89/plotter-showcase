@@ -20,6 +20,7 @@ export function ColumnSelector() {
   const isPlotting = useAppStore(s => s.isPlotting);
   const autoPlot = useAppStore(s => s.autoPlot);
   const toggleAutoPlot = useAppStore(s => s.toggleAutoPlot);
+  const dataVersion = useAppStore(s => s.dataVersion);
 
   const [activeTab, setActiveTab] = useState<Tab>('x');
   const lastRequestRef = useRef('');
@@ -88,14 +89,14 @@ export function ColumnSelector() {
   handlePlotRef.current = handlePlot;
   useEffect(() => {
     if (!autoPlot || !canPlot) return;
-    const fingerprint = JSON.stringify([checkedFilesArr, xColumn, yColumns, y2Columns, processing]);
+    const fingerprint = JSON.stringify([checkedFilesArr, xColumn, yColumns, y2Columns, processing, dataVersion]);
     if (fingerprint === lastRequestRef.current) return;
     const timer = setTimeout(() => {
       lastRequestRef.current = fingerprint;
       handlePlotRef.current();
     }, 300);
     return () => clearTimeout(timer);
-  }, [autoPlot, canPlot, checkedFilesArr, xColumn, yColumns, y2Columns, processing]);
+  }, [autoPlot, canPlot, checkedFilesArr, xColumn, yColumns, y2Columns, processing, dataVersion]);
 
   return (
     <div className="column-selector">

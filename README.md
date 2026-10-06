@@ -20,16 +20,71 @@ reproducible loop — and, ultimately, planned and steered by AI with a human in
 tool keeps figures and statistics uniform across a lab, and the ongoing work on standard
 experimental metadata (JSON-LD / RO-Crate).
 
+## Highlights
+
+- **Live folder watch**: point Plotter at the folder an instrument writes into. New files are
+  loaded and plotted as they arrive, a file still being written is redrawn live, and the saved
+  extractions are replayed, so population statistics update during the experiment.
+- **One central tool for the whole lab**: nothing to install, one shared publication style,
+  the same processing and statistics for everyone, and sessions that reopen identically.
+- **Lightweight server**: about 240 MB of RAM and no CPU at rest. A 200,000-point signal is
+  plotted in about 50 ms. It runs on an ordinary lab PC, with no GPU and no cloud
+  ([figures below](#lightweight-by-design)).
+- **AI-ready**: an AI agent can drive every analysis step through MCP, on the same code path
+  as the user interface.
+
 ## What it does
 
 | Step | Capability | Where |
 |------|-----------|-------|
-| **Ingest** | CSV / TXT / TSV with automatic delimiter, header and units-line detection; Excel (`.xlsx`, `.xls`). Works with heterogeneous instrument exports (potentiostat, tribometer, UV-vis, XRD…) without per-instrument code. | `web/backend/core/data_loader.py` |
+| **Ingest** | CSV / TSV with automatic delimiter, header and units-line detection; Excel (`.xlsx`, `.xls`). Works with heterogeneous instrument exports (potentiostat, tribometer, UV-vis, XRD…) without per-instrument code. | `web/backend/core/data_loader.py` |
+| **Watch** | Follows a folder of the shared drive: new files are loaded and checked, growing files are reloaded in place (incomplete last line ignored), and extraction recipes are replayed on every change. | `web/backend/api/watch.py`, `web/frontend/src/components/FolderWatch.tsx` |
 | **Process** | Smoothing, outlier removal, denoising (Savitzky-Golay, median, wavelet, FFT low-pass), baseline correction (SNIP, AsLS, arPLS, masked polynomial, auto), normalisation. Applied on the read path, non-destructive. | `web/backend/core/processing.py`, `denoise_methods.py`, `baseline_correction.py` |
 | **Analyse** | Per-file metric extraction (max, min, slope, value at X, Y at max X, conditional values…) and **population statistics** (n, mean, sample SD, CV %) grouped by filename tokens. | `web/backend/core/extraction.py`, `web/frontend/src/utils/stats.ts` |
 | **Store & share** | Each analysis session is a self-contained, documented SQLite pool (`.db`): raw data, processing settings, extracted values and plot style — reopenable and shareable. | `web/backend/core/db_schema.py` |
 | **Supervise** | Interactive Plotly UI with step-by-step tutorial, publication-grade SVG/PNG export, annotation layer. | `web/frontend/` |
 | **Automate** | MCP server: an LLM agent can list, open, describe, plot, extract, compute statistics and save — using the **same code path** as the UI. | `web/backend/mcp_server.py` |
+
+## Live: watch an acquisition folder
+
+![Watching PEO_bench: live_run.csv is still being written and is redrawn every 2 s](docs/screenshots/07-folder-watch.png)
+
+Click **Watch** in the header and choose a folder of the server's shared drive (`SHARE_PATH`).
+This is the folder an acquisition PC writes into, directly or through a synchronisation tool
+such as Syncthing. Every 2 seconds, Plotter does the following:
+
+1. **New files** are loaded, checked and plotted with the current X/Y columns and style.
+2. **Files that grew** keep their colour and legend and are redrawn with the new data. In a
+   text file, the last line is ignored until it is complete, so a half-written row is never
+   parsed.
+3. **Extraction recipes** already defined in the Extract tab are replayed on every new or
+   changed file, so the per-file values and the population statistics follow the experiment.
+
+This is the same idea as the incremental analysis of Materia Nova's PEO oscilloscope software
+(PEOscillo), generalised to any instrument that writes tabular files. Watching keeps running
+whichever tab is shown, and **● folder** in the header stops it. The folder is polled rather
+than relying on file-system events: events are unreliable on network shares, and a poll of an
+unchanged folder takes about 2 ms.
+
+## Lightweight by design
+
+Measured on the development workstation (AMD Ryzen 9 9900X, Python 3.12, a single uvicorn
+worker), with [`tools/benchmark.py`](tools/benchmark.py) on a synthetic 200,000-row file (3.6 MB):
+
+| Measure | Value |
+|---|---|
+| Backend memory, one session with this file loaded | ≈ 240 MB |
+| CPU at rest (20 s sample) | 0 s |
+| Upload + parse | ≈ 0.75 s |
+| Plot request, raw / with Savitzky-Golay denoising | ≈ 50 ms / ≈ 50 ms |
+| Extraction (max) | ≈ 7 ms |
+| Folder-watch poll, nothing changed | ≈ 2 ms |
+
+Memory is bounded by design: at most 16 sessions are kept in RAM (least recently used are
+evicted to disk), there is a 50-entry cache of processed curves per session, and the number of
+concurrent heavy computations is capped. A lab therefore needs no dedicated hardware: the
+production instance runs as a Windows service next to other lab tools. *Figures from the
+production server are to be added.*
 
 ## AI-ready: the MCP interface
 
@@ -85,7 +140,7 @@ web/deploy/     Deployment scripts (Windows service via NSSM, nginx sub-path, pr
 tests/          Backend tests (pytest)
 docs/           Technical notes, showcase (SHOWCASE.md, screenshots/); docs/legacy/ = archived desktop app
 examples/       Synthetic demo dataset and its generator
-tools/          Maintenance scripts (third-party licence inventory)
+tools/          Maintenance scripts (third-party licence inventory, benchmark)
 ```
 
 A former PyQt5 desktop version is archived under the git tag `legacy-desktop-2026-06-21`.

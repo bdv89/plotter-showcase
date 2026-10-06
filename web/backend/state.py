@@ -31,6 +31,11 @@ class AppState:
         # Processed DataFrames (LRU, max 50). Key = file_id + processing settings
         # + columns (built in core/processing.py) so a stale entry is impossible.
         self.processed_cache = OrderedDict()
+        # Folder watch (api/watch.py), RAM only: watched folder, {filename: (size, mtime)}
+        # already loaded, and when the session was last persisted by a reload.
+        self.watch_folder = ""
+        self.watch_sigs = {}
+        self.watch_persisted = 0.0
 
     def cache_get(self, key):
         """Return a cached processed DataFrame (marking it recently used), or None."""
@@ -59,4 +64,6 @@ class AppState:
         self.y_columns = []
         self.y2_columns = []
         self.processed_cache.clear()
+        self.watch_folder = ""
+        self.watch_sigs = {}
         print("✅ All state cleared")

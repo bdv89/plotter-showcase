@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { ExtractRecipe } from '../types';
-import { extractData, removeExtractedColumn as removeExtractedColumnApi } from '../api/client';
+import { removeExtractedColumn as removeExtractedColumnApi } from '../api/client';
+import { runRecipe as runRecipeOn } from '../utils/recipes';
 import { copyToClipboard } from '../utils/clipboard';
 import { DEFAULT_DECIMALS, MAX_DECIMALS, MIN_DECIMALS } from '../utils/stats';
 import { SeriesPicker } from './SeriesPicker';
@@ -33,11 +34,9 @@ export function ExtractPanel() {
   const files = useAppStore(s => s.files);
   const checkedFiles = useAppStore(s => s.checkedFiles);
   const fileStyles = useAppStore(s => s.fileStyles);
-  const processing = useAppStore(s => s.processing);
   const extractedColumns = useAppStore(s => s.extractedColumns);
   const extractRecipes = useAppStore(s => s.extractRecipes);
   const setExtractRecipe = useAppStore(s => s.setExtractRecipe);
-  const setExtractedColumn = useAppStore(s => s.setExtractedColumn);
   const removeExtractedColumn = useAppStore(s => s.removeExtractedColumn);
   const clearExtractedColumns = useAppStore(s => s.clearExtractedColumns);
   const toggleFile = useAppStore(s => s.toggleFile);
@@ -98,24 +97,14 @@ export function ExtractPanel() {
     [extraCols, extractRecipes]
   );
 
-  // Le seul endroit qui appelle l'API d'extraction : « Extract » exécute une
-  // recette fraîche, « Re-extract » rejoue celles déjà enregistrées. Même code
-  // → une valeur recalculée est identique à la valeur d'origine.
-  const runRecipe = useCallback(async (colName: string, recipe: ExtractRecipe) => {
-    const result = await extractData({
-      file_ids: checkedFileList.map(f => f.file_id),
-      ...recipe,
-      processing,
-    });
-    let ok = 0;
-    Object.entries(result.results).forEach(([fileId, value]) => {
-      // 6 = what api/extract.py actually rounded to (its Pydantic default);
-      // how many of those digits are SHOWN is extractedDecimals.
-      if (value != null) { setExtractedColumn(fileId, colName, value, 6); ok++; }
-    });
-    console.log('🟢 extract', { colName, files: checkedFileList.length, ok });
-    return ok;
-  }, [checkedFileList, processing, setExtractedColumn]);
+  // « Extract » exécute une recette fraîche, « Re-extract » rejoue celles déjà
+  // enregistrées — sur les fichiers cochés. Même code que le suivi de dossier
+  // (utils/recipes.ts) → une valeur recalculée est identique à la valeur d'origine.
+  const runRecipe = useCallback(
+    (colName: string, recipe: ExtractRecipe) =>
+      runRecipeOn(colName, recipe, checkedFileList.map(f => f.file_id)),
+    [checkedFileList]
+  );
 
   // Compute + store in one go: the values table below IS the preview.
   const handleExtract = useCallback(async () => {

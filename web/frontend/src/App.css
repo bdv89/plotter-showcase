@@ -240,6 +240,46 @@ button:disabled {
   align-self: center;
 }
 
+/* Folder watch (FolderWatch.tsx): header button + drop-down panel. */
+.folder-watch {
+  position: relative;
+  display: flex;
+  gap: 8px;
+}
+
+.pool-button.watching {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.watch-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 320px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.watch-panel select {
+  flex: 1;
+  min-width: 0;
+}
+
+.watch-hint {
+  flex-basis: 100%;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 .plot-button,
 .apply-button {
   background: var(--accent);

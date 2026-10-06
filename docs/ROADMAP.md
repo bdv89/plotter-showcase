@@ -19,8 +19,8 @@ EMMO. Details and status: [SHOWCASE.md § ONGOING](SHOWCASE.md#ongoing--experime
 
 ## Closing the loop
 
-- **Live ingestion**: watch an acquisition folder (or a synchronised one) and update curves and
-  metrics while the experiment runs.
+- ~~**Live ingestion**~~ — done: folder watch (`api/watch.py`). Next: push-based streaming and
+  alerts / stop conditions on extracted values.
 - **Decision interface**: expose the extracted metrics and population statistics in a form a
   planning agent can consume directly (objective values and uncertainties).
 - **Cost-aware planning hooks**: record duration, bath usage and manual interventions per run,

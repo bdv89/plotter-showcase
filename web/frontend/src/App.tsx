@@ -8,6 +8,7 @@ import { StatsBar } from './components/StatsBar';
 import { HelpModal } from './components/HelpModal';
 import { TutorialModal } from './components/TutorialModal';
 import { MetricsView } from './components/MetricsView';
+import { FolderWatch } from './components/FolderWatch';
 import { useAppStore } from './store/appStore';
 import { exportPool, loadPool, uploadFiles, getSessionState } from './api/client';
 import { pickAndSave, writeBlob, openDataFiles } from './utils/saveFile';
@@ -262,6 +263,7 @@ function App() {
           >
             Load
           </button>
+          <FolderWatch />
           <input
             ref={poolInputRef}
             type="file"

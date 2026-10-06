@@ -9,6 +9,7 @@ from api.metrics import router as metrics_router
 from api.plot import router as plot_router
 from api.pool import router as pool_router
 from api.upload import router as upload_router
+from api.watch import router as watch_router
 from config import FRONTEND_DIST, METRICS_DB, SESSIONS_DIR, SHARE_PATH, UPLOAD_DIR
 from core import metrics
 from fastapi import Depends, FastAPI, Request
@@ -60,9 +61,10 @@ app.include_router(plot_router, prefix="/api", tags=["plot"])
 app.include_router(extract_router, prefix="/api", tags=["extract"])
 app.include_router(pool_router, prefix="/api", tags=["pool"])
 app.include_router(metrics_router, prefix="/api", tags=["metrics"])
+app.include_router(watch_router, prefix="/api", tags=["watch"])
 
 # Endpoints exclus du suivi de connexion (polling / auto-refresh → pas de bruit).
-_METRICS_SKIP = ("/api/health", "/api/metrics")
+_METRICS_SKIP = ("/api/health", "/api/metrics", "/api/watch/poll")
 
 
 @app.middleware("http")

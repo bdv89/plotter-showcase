@@ -37,6 +37,31 @@ export async function uploadFiles(files: File[]): Promise<FileInfo[]> {
   return res.json();
 }
 
+// Folder watch (api/watch.py): sub-folders of the server's shared folder, and one poll cycle.
+export async function getWatchFolders(): Promise<{ folders: string[]; truncated: boolean }> {
+  const res = await fetch(`${API_BASE}/watch/folders`, { headers: sidHeaders() });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || await res.text());
+  return res.json();
+}
+
+export interface WatchResult {
+  folder: string;
+  added: FileInfo[];
+  updated: FileInfo[];
+  rejected: FileInfo[];
+  files_in_folder: number;
+}
+
+export async function pollWatch(folder: string): Promise<WatchResult> {
+  const res = await fetch(`${API_BASE}/watch/poll`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...sidHeaders() },
+    body: JSON.stringify({ folder }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || `HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function getFiles(): Promise<FileInfo[]> {
   const res = await fetch(`${API_BASE}/files`, { headers: sidHeaders() });
   if (!res.ok) throw new Error(await res.text());

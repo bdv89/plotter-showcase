@@ -223,6 +223,10 @@ interface AppStore {
   // Auto-plot
   autoPlot: boolean;
   toggleAutoPlot: () => void;
+  // Bumped when files already loaded get new data (folder watch reloads a growing file):
+  // same ids, so the auto-plot fingerprint needs it to notice.
+  dataVersion: number;
+  bumpDataVersion: () => void;
 
   // Theme
   theme: 'dark' | 'light';
@@ -511,6 +515,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Auto-plot
   autoPlot: true,
   toggleAutoPlot: () => set({ autoPlot: !get().autoPlot }),
+  dataVersion: 0,
+  bumpDataVersion: () => set({ dataVersion: get().dataVersion + 1 }),
 
   // Theme
   theme: (localStorage.getItem('csv-plotter-theme') as 'dark' | 'light') || 'dark',
