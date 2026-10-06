@@ -18,4 +18,4 @@ git checkout legacy-desktop-2026-06-21    # récupérer le code desktop
 - `seq-load-and-plot.md` — séquence Mermaid « charger → traiter → tracer » de l'app desktop (QThread/QMainWindow).
 - `DENOISING_INTEGRATION.md`, `FITTING_GUIDE.md`, `INTERACTIVE_EDITING_GUIDE.md`, `RELEASE.md` — guides desktop.
 
-> Architecture **web actuelle** : voir [`../../CLAUDE.md`](../../CLAUDE.md), [`../../README.md`](../../README.md) et [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md).
+> Architecture **web actuelle** : voir [`../../README.md`](../../README.md) et [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md).

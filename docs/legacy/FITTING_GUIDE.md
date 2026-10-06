@@ -263,4 +263,4 @@ Ces limitations correspondent au cas d'usage typique (1-20 pics bien séparés).
 
 ---
 
-**Questions ou bugs ?** Voir `CLAUDE.md` pour les guidelines de développement.
+**Questions ou bugs ?** Voir `README.md` à la racine.

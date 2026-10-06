@@ -4,7 +4,7 @@ Shared data utility functions for CSV Plotter application.
 This module centralizes common data transformation functions to avoid
 code duplication across data_manager.py, storage_manager.py, and db_schema.py.
 
-Single Source of Truth (CLAUDE.md compliance).
+Single Source of Truth.
 """
 
 import pandas as pd

@@ -38,3 +38,10 @@ standards/
 web/frontend/node_modules/
 web/frontend/dist/
 *.tsbuildinfo
+
+# AI assistant instructions (local only)
+CLAUDE.md
+CLAUDE_*.md
+CLAUDE-*.md
+AGENTS.md
+Codex.md

@@ -4,7 +4,7 @@ But : fournir une vue d'ensemble courte et reliée au code pour aider humains et
 LLMs à comprendre le projet **web** (FastAPI + React) sans complexité inutile.
 
 > L'**architecture détaillée** (slices d'état, endpoints, format de pool, pièges)
-> vit déjà dans **[CLAUDE.md](CLAUDE.md)** et **[README.md](README.md)**. Ce fichier
+> vit dans **[README.md](README.md)**, **[PITFALLS.md](PITFALLS.md)** et les docstrings du code. Ce fichier
 > ne fait que pointer dessus — pas de duplication.
 >
 > Une ancienne app **desktop PyQt5** occupait la racine du dépôt ; elle a été
@@ -47,7 +47,7 @@ Navigateur                          Serveur
   + `src/api/client.ts` + `src/utils/` (coloring, stats, clipboard…).
 
 → Détail des endpoints, des slices Zustand, du format `.db` et des conventions
-cross-stack : **[CLAUDE.md](CLAUDE.md)**. Déploiement (nginx, NSSM, 3 environnements) :
+cross-stack : docstrings de `web/backend/` et `web/frontend/src/store/appStore.ts`. Déploiement (nginx, NSSM, 3 environnements) :
 **[web/deploy/DEPLOY.md](web/deploy/DEPLOY.md)**.
 
 ## Gabarit de docstrings

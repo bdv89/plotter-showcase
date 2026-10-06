@@ -254,7 +254,7 @@ print(f"✅ Loading complete: {len(data)} rows")
 
 ## Extracted Columns Not Persisting in .dpool
 
-> ✅ **RESOLVED** (Dec 2025): This issue is now fixed with SQLite migration (.db format). The enhanced_csv_files pattern is preserved and works correctly with the new db_schema.py. See CLAUDE.md "SQLite Migration" section.
+> ✅ **RESOLVED** (Dec 2025): This issue is now fixed with SQLite migration (.db format). The enhanced_csv_files pattern is preserved and works correctly with the new db_schema.py.
 
 **Cause**: `save_data_pool()` passed `self.csv_files` directly to `StorageManager`, but `extracted_data` was only stored in UI (`file_list.extracted_columns`) and never copied to `csv_files` before save → .dpool files saved without extracted_data → load_pool() found nothing to restore.
 
@@ -425,7 +425,7 @@ These were replaced by `_process_file_lazy()` which uses lazy loading, but the o
 **Solution**: Delete both methods entirely.
 
 **Prevention**:
-- Follow CLAUDE.md rule: "Puis-je simplement SUPPRIMER du code au lieu d'en ajouter?"
+- Rule: "Puis-je simplement SUPPRIMER du code au lieu d'en ajouter?"
 - Use IDE "Find Usages" before assuming code is needed
 - Grep for function names before refactoring: `grep -r "_process_file\b" *.py`
 - When adding new implementations, delete replaced code immediately
@@ -791,7 +791,7 @@ Dry-run after fix: 64 files / 533 KB, 0 failures.
 
 **Contournement (sans code)** : bouton **Auto** dans la barre d'outils de `FileTable` (re-remplit les légendes depuis les noms), puis **Save / Save As** pour re-sauver le pool → le `.db` repart avec des labels remplis. Les pools sauvegardés **après** le fix ne sont pas concernés.
 
-**Fix optionnel** (si on veut que les vieux pools s'affichent sans manip) : dans `restorePool`, forcer le repli filename quand le label persistté est vide, p.ex. `legend_label: data.styles[fileId]?.legend_label || f.filename.replace(/\.[^.]+$/, '')`. Non retenu ici : on préfère respecter ce qu'un pool a explicitement sauvé (un `Clear` volontaire doit rester vide au rechargement). Voir la section « Légende » de [CLAUDE.md](CLAUDE.md).
+**Fix optionnel** (si on veut que les vieux pools s'affichent sans manip) : dans `restorePool`, forcer le repli filename quand le label persistté est vide, p.ex. `legend_label: data.styles[fileId]?.legend_label || f.filename.replace(/\.[^.]+$/, '')`. Non retenu ici : on préfère respecter ce qu'un pool a explicitement sauvé (un `Clear` volontaire doit rester vide au rechargement).
 
 **Prevention**: quand un défaut applicatif change, se rappeler que les artefacts persistés (pools `.db`) portent l'**ancien** défaut ; le fallback ne s'applique qu'aux champs réellement absents, pas aux valeurs vides explicitement enregistrées.
 
@@ -853,7 +853,7 @@ Le chemin n'a pas de `.d.ts` → déclaration dans `src/vite-env.d.ts` (`declare
 ```powershell
 (Get-Content dist\assets\index-*.js -TotalCount 1).Substring(0,200)   # doit commencer par "(function(){", pas par "import … from"
 ```
-Et plus généralement : **un test en dev ne vaut pas un test du build de prod** — Vite dev et Rollup ne résolvent pas les deps de la même façon. Voir la section « Calque de dessin » de [CLAUDE.md](CLAUDE.md).
+Et plus généralement : **un test en dev ne vaut pas un test du build de prod** — Vite dev et Rollup ne résolvent pas les deps de la même façon.
 
 ---
 
