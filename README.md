@@ -104,8 +104,8 @@ Semantic versioning (`vX.Y.Z`); source of truth is `FastAPI(version=...)` in
 
 ## License
 
-**To be confirmed by Materia Nova** (candidates: Apache-2.0 or EUPL-1.2). Until a `LICENSE`
-file is added, all rights are reserved.
+Copyright 2025-2026 Materia Nova. Licensed under the **[Apache License 2.0](LICENSE)** — see
+[NOTICE](NOTICE). Third-party dependencies keep their own (permissive) licenses.
 
 ## Contact
 

@@ -62,5 +62,6 @@ needs exactly this to choose the next experiment.
 
 ## Licensing
 
-The code will be released under an open-source licence to be confirmed by Materia Nova
-(candidates: Apache-2.0, EUPL-1.2).
+Released under the **[Apache License 2.0](../LICENSE)**: permissive, with an explicit patent
+grant, so partners, other labs and industry can reuse and integrate the code — the same
+licence as the LeRobot ecosystem used for Materia Nova's robotic cells.
