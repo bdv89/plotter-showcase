@@ -1,12 +1,35 @@
-# Environnements : dev → beta → prod
+# Environnements : beta (= dev) et prod
 
-| Env | URL | Port / service | Dossier code | Build / lancement |
+| Env | Dossier | Code | Service | URL |
 |---|---|---|---|---|
-| **dev** | `http://localhost:5174` | Vite 5174 + backend 9099 | `…\260324\web` | `start-plotter.ps1` (Vite + reload, **dev only**) |
-| **beta** | `…/plotter-exp/` | 9199 · `CSVPlotter_Exp` | `…\260324-exp\web` | build `--base=/plotter-exp/` (§ Version expérimentale) |
-| **prod** | `…/plotter/` | 9099 · `CSVPlotter` | `…\260324\web` | build `--base=/plotter/` (§1–4) |
+| **beta / dev** | `…\260324-exp` | **copie de travail git** : on y code, on y committe | `CSVPlotter_Exp` · 9199 | `…/plotter-exp/` |
+| **prod** | `…\260324` | **un tag git** (`vX.Y.Z`), en lecture seule : on n'y code jamais | `CSVPlotter` · 9099 | `…/plotter/` |
 
-**Flux** : développer/tester en **dev** (5174, dans `…\260324`) → propager vers **beta** (`…\260324-exp`, build `/plotter-exp/`) pour valider sans risque → promouvoir **beta → prod** via `promote-exp-to-prod.ps1` (§7). Un build ne propage jamais le source entre dossiers : voir « Mise à jour de l'exp » (Piège n°1).
+Un seul dépôt de référence : **`origin`** (github.com/bdv89/plotter, privé). La **vitrine publique**
+(github.com/bdv89/plotter-showcase) partage le même historique et n'est mise à jour que sur décision,
+via `tools/publish-showcase.ps1` (contrôle anti-fuite inclus).
+
+**Cycle d'une version** :
+```powershell
+# 1. coder et tester dans …\260324-exp (Vite optionnel : .\start-plotter.ps1, backend sur 9299)
+git commit … ; git push origin main
+# 2. déployer en beta et valider sur /plotter-exp/ (admin)
+.\web\deploy\deploy.ps1 -Target beta
+# 3. version : bump web/backend/main.py + web/frontend/package.json, CHANGELOG.md, puis
+git tag v0.3.1 ; git push origin main v0.3.1
+# 4. déployer la prod depuis le tag (admin) — checkout du tag dans …\260324, pip, build, restart
+.\web\deploy\deploy.ps1 -Target prod -Tag v0.3.1
+# 5. (facultatif) publier la vitrine
+.\tools\publish-showcase.ps1 -Tag v0.3.1
+```
+`deploy.ps1` remplace les anciens `promote-dev-to-beta.ps1` / `promote-exp-to-prod.ps1` (copies robocopy
+entre dossiers, supprimés) : plus de copie de source, donc plus de « code édité mais pas propagé » (ancien piège n°1).
+La version servie se lit dans `/<base>/openapi.json` (`info.version`) ; le script la contrôle après déploiement.
+
+**Historique réécrit le 2026-10-06** (`git filter-repo`) pour retirer les fichiers d'assistants IA, des données
+de labo, des chemins/IP internes et l'email professionnel. Sauvegarde de l'ancien historique :
+`<CODE_DIR>\backup\plotter-mirror-20261006.git`. Si une information interne entre à nouveau dans
+l'historique, même méthode avant toute publication de la vitrine.
 
 ---
 
@@ -156,12 +179,9 @@ sérialisée par le verrou de session.
   à ne pas utiliser en prod.
 
 ## Mise à jour
-```powershell
-cd web\frontend
-$env:VITE_API_URL = '/plotter/api'
-npm run build -- --base=/plotter/      # rebuild UI (nginx la sert directement, pas de reload)
-Restart-Service CSVPlotter             # admin, si le code backend a changé
-```
+Toujours par `deploy.ps1 -Target prod -Tag vX.Y.Z` (cf. « Cycle d'une version » en tête de ce fichier) :
+il pose les deux réglages de build (`--base=/plotter/` **et** `VITE_API_URL=/plotter/api`), synchronise
+les dépendances service arrêté et contrôle la version servie.
 
 ---
 
@@ -246,68 +266,33 @@ Puis `Restart-Service Dashboard` (admin) → deux cartes, chacune avec santé, b
 (→ son service NSSM) et lien **Ouvrir**. Le champ `url` est facultatif (ajouté au modèle dashboard) :
 absent = pas de bouton Ouvrir.
 
-### 7. Promotion beta → prod (une seule commande)
-Une fois la beta validée sur `/plotter-exp/`, pousse son code vers la prod :
-```powershell
-cd web\deploy
-powershell -ExecutionPolicy Bypass -File .\promote-exp-to-prod.ps1   # admin ; -Force pour sauter la confirmation
-```
-Le script : (1) `robocopy …\260324-exp\web → …\260324\web` (hors `venv_win/node_modules/dist/__pycache__/uploads/logs`),
-(2) rebuild frontend prod `--base=/plotter/`, (3) `Restart-Service CSVPlotter` + health check.
-Données prod (`C:\ProgramData\Plotter`) et beta (9199, `C:\ProgramData\Plotter_Exp`) **non touchées**.
-Ensuite **Ctrl+Shift+R** sur `/plotter/`.
+### 7. Promotion beta → prod
+Il n'y a plus de copie beta → prod : la prod se déploie **depuis un tag git** (`deploy.ps1 -Target prod -Tag vX.Y.Z`,
+cf. tête de ce fichier). Données prod (`C:\ProgramData\Plotter`) et beta (`C:\ProgramData\Plotter_Exp`) non touchées.
 
-### Mise à jour de l'exp
+### Mise à jour de la beta
+`…\260324-exp` **est** la copie de travail git : ce qui y est édité est ce que la beta servira après
+`deploy.ps1 -Target beta` (admin : pip service arrêté, `npm install`, build `/plotter-exp/`, restart, health).
+Puis **Ctrl+Shift+R** sur `/plotter-exp/`.
 
-> ⚠️ **Piège n°1** : on développe dans `…\260324`, mais `/plotter-exp/` sert le `dist/` **compilé de la copie `…\260324-exp`**.
-> Éditer `…\260324` puis rebuilder n'a **aucun effet** tant que le code n'a pas été **propagé** vers `…\260324-exp`.
-> Toujours faire : **(1) propager → (2) rebuild/redémarrer → (3) hard-refresh**.
+> ⚠️ **Piège n°2** (nom de service) : le service beta s'appelle **`CSVPlotter_Exp`**, pas `CSVPlotter`.
+> Le bouton du services dashboard doit pointer sur `exp_task_name: CSVPlotter_Exp` (cf. §6).
 
-**Raccourci (recommandé)** — le script `promote-dev-to-beta.ps1` enchaîne propagation + rebuild + restart + health check :
-```powershell
-cd web\deploy
-powershell -ExecutionPolicy Bypass -File .\promote-dev-to-beta.ps1   # admin ; -Force pour sauter la confirmation
-```
-Puis **Ctrl+Shift+R** sur `/plotter-exp/`. Les étapes manuelles ci-dessous restent valables si tu veux propager/builder à la main.
-
-**1. Propager le code dev → copie exp** (même robocopy qu'à l'install, exclut les artefacts régénérables) :
-```powershell
-$src = '<INSTALL_DIR>\260324\web'
-$dst = '<INSTALL_DIR>\260324-exp\web'
-robocopy $src $dst /MIR /R:1 /W:1 /XJ /XD venv venv_win node_modules dist __pycache__ uploads logs .git .jj /XF *.log
-```
-
-**2a. Changement frontend** (`.tsx`, `.css`, store…) — rebuild du `dist/`, **pas** de redémarrage de service :
-```powershell
-cd <INSTALL_DIR>\260324-exp\web\frontend
-$env:VITE_API_URL = '/plotter-exp/api'; npm run build -- --base=/plotter-exp/
-```
-
-**2b. Changement backend** (`.py`) — redémarrer le service (admin) ; nginx sert l'API via proxy, aucun rebuild UI :
-```powershell
-Restart-Service CSVPlotter_Exp -Force        # PowerShell admin requis
-```
-
-**3. Hard-refresh navigateur** sur `http://<serveur>/plotter-exp/` → **Ctrl+Shift+R** (les anciens assets JS sont en cache ; un F5 simple ne suffit pas).
-
-> ⚠️ **Piège n°2** (nom de service) : le service exp s'appelle **`CSVPlotter_Exp`**, pas `CSVPlotter`.
-> `Restart-Service CSVPlotter` → *NoServiceFoundForGivenName*. Le bouton du services dashboard doit pointer sur
-> `exp_task_name: CSVPlotter_Exp` (cf. §6) ; sinon son redémarrage échoue avec cette même erreur.
-
-> ⚠️ **Piège n°3** (dépendances de la copie) : `promote-dev-to-beta.ps1` lance désormais `npm install` **systématiquement** avant le build.
-> Auparavant il ne le faisait que si `node_modules` était **absent** : une dépendance ajoutée côté dev depuis la dernière promo n'était jamais
-> installée côté beta et `tsc -b` cassait (vécu avec `vitest` : `error TS2307: Cannot find module 'vitest'`). `npm install` prend ~1 s quand rien
-> ne change — le garder inconditionnel.
+> ⚠️ **Piège n°3** (dépendances) : `deploy.ps1` lance `npm install` et `pip install` **systématiquement** : une
+> dépendance ajoutée depuis le dernier déploiement serait sinon absente (`tsc -b` cassait sur `vitest`, et un
+> import Python manquant empêche le service de démarrer).
 
 ### ⚠️ Ne jamais builder la prod à la main
 
-`--base=/plotter/` et `VITE_API_URL=/plotter/api` sont **deux** réglages, et l'oubli du second ne se voit pas : la page s'affiche parfaitement et **tous** les appels API partent en 404 (`GET /api/session` au lieu de `/plotter/api/session`). Arrivé le 10/08, prod cassée ~14 h. Toujours passer par `promote-exp-to-prod.ps1` (§7), qui pose les deux.
+`--base=/plotter/` et `VITE_API_URL=/plotter/api` sont **deux** réglages, et l'oubli du second ne se voit pas : la page s'affiche parfaitement et **tous** les appels API partent en 404 (`GET /api/session` au lieu de `/plotter/api/session`). Arrivé le 10/08, prod cassée ~14 h. Toujours passer par `deploy.ps1`, qui pose les deux.
 
 Depuis, `npm run build` lance automatiquement `scripts/check-build.mjs` (npm `postbuild`) : il compare la base écrite dans `dist/index.html` à l'URL d'API compilée dans le bundle et **rejette le build** (code 1) en cas d'écart, en affichant la commande correcte. Il vérifie aussi l'absence d'import nu (page blanche). ⚠️ Le rejet intervient **après** l'écriture du `dist/` : un build refusé laisse un `dist/` cassé — relancer immédiatement avec la commande affichée.
 
 ### ⚠️ Un uvicorn dev peut squatter le port de la prod
 
-`start-plotter.ps1` (dev only) lance `uvicorn --reload --host 0.0.0.0 --port 9099` — **le port de la prod**. S'il tourne encore, le service NSSM
+> Depuis le 2026-10-06, `start-plotter.ps1` utilise **9299** par défaut : ce piège ne se produit plus qu'avec `-BackendPort 9099`.
+
+Avant, `start-plotter.ps1` (dev only) lançait `uvicorn --reload --host 0.0.0.0 --port 9099` — **le port de la prod**. S'il tourne encore, le service NSSM
 `CSVPlotter` ne peut pas prendre le port : il affiche `Running` mais c'est le processus **dev** qui sert `/plotter/api`, avec `--reload`, bindé sur
 le LAN au lieu de `127.0.0.1`, et **sans les variables d'environnement du service** (donc les sessions atterrissent sous `/tmp/csv-plotter-uploads`
 au lieu de `C:\ProgramData\Plotter\uploads`).

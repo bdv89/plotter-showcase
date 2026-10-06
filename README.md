@@ -68,8 +68,8 @@ unchanged folder takes about 2 ms.
 
 ## Lightweight by design
 
-Measured on the development workstation (AMD Ryzen 9 9900X, Python 3.12, a single uvicorn
-worker), with [`tools/benchmark.py`](tools/benchmark.py) on a synthetic 200,000-row file (3.6 MB):
+Measured on the PC that hosts the production instance (AMD Ryzen 9 9900X, Python 3.12, a single
+uvicorn worker, alongside the beta instance and other lab services), with [`tools/benchmark.py`](tools/benchmark.py) on a synthetic 200,000-row file (3.6 MB):
 
 | Measure | Value |
 |---|---|
@@ -83,8 +83,7 @@ worker), with [`tools/benchmark.py`](tools/benchmark.py) on a synthetic 200,000-
 Memory is bounded by design: at most 16 sessions are kept in RAM (least recently used are
 evicted to disk), there is a 50-entry cache of processed curves per session, and the number of
 concurrent heavy computations is capped. A lab therefore needs no dedicated hardware: the
-production instance runs as a Windows service next to other lab tools. *Figures from the
-production server are to be added.*
+production instance runs as a Windows service next to other lab tools.
 
 ## AI-ready: the MCP interface
 
@@ -136,11 +135,11 @@ as `<sid>.db`.
 ```
 web/backend/    FastAPI: api/ (routers), core/ (processing), models/ (schemas), main.py, mcp_server.py
 web/frontend/   React/Vite: src/components, src/store (Zustand), src/api
-web/deploy/     Deployment scripts (Windows service via NSSM, nginx sub-path, promotion dev→beta→prod)
+web/deploy/     deploy.ps1 (beta from the working copy, prod from a git tag), NSSM service, nginx sub-path
 tests/          Backend tests (pytest)
 docs/           Technical notes, showcase (SHOWCASE.md, screenshots/); docs/legacy/ = archived desktop app
 examples/       Synthetic demo dataset and its generator
-tools/          Maintenance scripts (third-party licence inventory, benchmark)
+tools/          Licence inventory, benchmark, public showcase publication (with leak check)
 ```
 
 A former PyQt5 desktop version is archived under the git tag `legacy-desktop-2026-06-21`.
@@ -158,14 +157,17 @@ cd web\frontend; npm run lint          # ESLint
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — architecture overview (FR)
 - **[PITFALLS.md](PITFALLS.md)** — known pitfalls and their fixes (FR/EN)
-- **[web/deploy/DEPLOY.md](web/deploy/DEPLOY.md)** — deployment (nginx, Windows services) (FR)
+- **[web/deploy/DEPLOY.md](web/deploy/DEPLOY.md)** — environments (beta / prod), release cycle, nginx, Windows services (FR)
+- **[CHANGELOG.md](CHANGELOG.md)** — release notes
 - **[docs/SHOWCASE.md](docs/SHOWCASE.md)** — guided tour with screenshots
 - **[docs/](docs/)** — denoising, baseline correction, performance notes
 
 ## Releases
 
-Semantic versioning (`vX.Y.Z`); source of truth is `FastAPI(version=...)` in
-`web/backend/main.py`.
+Semantic versioning: the version lives in `web/backend/main.py` (`FastAPI(version=...)`) and
+`web/frontend/package.json`, and is served at `/openapi.json`. Every production deployment is a
+git tag `vX.Y.Z` (`web/deploy/deploy.ps1 -Target prod -Tag vX.Y.Z`); changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

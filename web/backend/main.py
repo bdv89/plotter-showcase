@@ -45,7 +45,7 @@ async def lifespan(_app: FastAPI):
         yield
 
 
-app = FastAPI(title="CSV Plotter API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="CSV Plotter API", version="0.3.0", lifespan=lifespan)
 
 # CORS still allowed for dev (frontend on a different port). In production the
 # built frontend is served same-origin (below), so CORS is a no-op there.

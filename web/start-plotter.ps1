@@ -1,14 +1,15 @@
 ﻿# start-plotter.ps1 — Lance Plotter accessible sur le LAN (backend + frontend)
 # Usage :  .\start-plotter.ps1            (ports par défaut)
-#          .\start-plotter.ps1 -BackendPort 9099 -FrontendPort 5174
+#          .\start-plotter.ps1 -BackendPort 9299 -FrontendPort 5174
+#          (9299 par défaut : jamais 9099/9199, les ports des services prod et beta)
 # Ouvre 2 fenêtres PowerShell (logs backend / frontend). Ctrl+C dans chacune pour stopper.
 #
 # Pare-feu (une seule fois, PowerShell admin) — ouvrir les ports entrants :
 #   New-NetFirewallRule -DisplayName "Plotter_Frontend" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5174
-#   New-NetFirewallRule -DisplayName "Plotter_Backend"  -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9099
+#   New-NetFirewallRule -DisplayName "Plotter_Backend"  -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9299
 
 param(
-    [int]$BackendPort = 9099,
+    [int]$BackendPort = 9299,
     [int]$FrontendPort = 5174
 )
 
