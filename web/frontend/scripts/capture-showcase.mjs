@@ -74,7 +74,7 @@ try {
   await field('xaxis', 'Title').fill('Deposition time (min)');
   await field('yaxis', 'Title').fill('Internal stress (MPa)');
   // Plusieurs changements de style rapprochés laissent les graduations Plotly sur la plage par
-  // défaut (−1…6) alors que les courbes restent justes (bug connu, cf. docs/ROADMAP.md) :
+  // défaut (−1…6) alors que les courbes restent justes (bug connu, cf. TODO.md) :
   // on force un recalcul des traces en décochant/recochant un fichier.
   await page.locator('.page.active .settings-toggle').click();
   await tab('Data');
