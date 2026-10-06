@@ -13,15 +13,15 @@
   can be clipped at the bottom of the figure. The statistics shown in the Extract tab are
   correct.
 
-## Fait
-- [x] **Tableau de stats OFF par défaut** (onglet Plot) — `DEFAULT_STATS.visible = false` dans
-  `appStore.ts` : c'est un ornement de la figure, il ne doit pas s'inviter sur le plot dès qu'une
-  valeur est extraite. La puce On/Off de `StatsBar` l'allume ; un pool garde son propre réglage.
-- [x] **Couleur de légende dans l'onglet Extract** — pastille `.legend-dot` en tête de ligne dans
-  Values **et** Populations, pour relier une ligne de chiffres à une courbe. Une population
-  n'affiche la sienne que si tous ses membres partagent la couleur (sans « Group by », les
-  cochés forment une population multicolore). Frontend seul, déployé en prod le 2026-08-19.
-- [x] **Onglet Metrics** — suivi de connexion (IPs + hits/endpoint + activité/jour), calqué sur
-  picture_to_CAS. Backend : middleware + `core/metrics.py` + `api/metrics.py` (SQLite `METRICS_DB`).
-  Frontend : `MetricsView.tsx` (4ᵉ onglet). ⚠️ Nécessite un `Restart-Service CSVPlotter` (admin) pour
-  charger le backend en prod.
+## Done
+- [x] **Statistics table OFF by default** (Plot tab) — `DEFAULT_STATS.visible = false` in
+  `appStore.ts`: it is a figure ornament and must not appear on the plot as soon as a value is
+  extracted. The On/Off chip in `StatsBar` turns it on; a pool keeps its own setting.
+- [x] **Legend colour in the Extract tab** — a `.legend-dot` marker at the start of each row in
+  both Values **and** Populations, to link a row of numbers to a curve. A population only shows
+  its marker if all its members share the same colour (without "Group by", the checked files
+  form a single multicoloured population). Frontend only, deployed to production on 2026-08-19.
+- [x] **Metrics tab** — connection tracking (IPs + hits per endpoint + daily activity), modelled
+  on picture_to_CAS. Backend: middleware + `core/metrics.py` + `api/metrics.py` (SQLite
+  `METRICS_DB`). Frontend: `MetricsView.tsx`. ⚠️ Requires a `Restart-Service CSVPlotter` (admin)
+  to load the backend in production.
