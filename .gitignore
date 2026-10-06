@@ -16,6 +16,7 @@ venv_win/
 _tmp_*
 *.log
 *.csv
+!examples/demo-data/*.csv
 
 # IDE / AI tools
 .vscode/

@@ -4,10 +4,14 @@ What exists today is described in the [README](../README.md). The items below ar
 envisaged to turn Plotter into the analysis stage of a closed-loop, AI-assisted experimentation
 pipeline (see [RAISE_alignment.md](RAISE_alignment.md)).
 
-## Data
+## ONGOING — Experimental metadata in a standard format
 
-- **Experiment metadata** attached to each file and pool (sample, process parameters,
-  instrument, operator, software version) so that provenance travels with the data.
+Attach the experimental context (sample, process parameters, instrument, operator, software
+version, processing applied) to every file and session, as **JSON-LD following RO-Crate**,
+with column units described by Frictionless Table Schema / CSVW and domain terms aligned with
+EMMO. Details and status: [SHOWCASE.md § ONGOING](SHOWCASE.md#ongoing--experimental-metadata-in-a-standard-format).
+
+## Data
 - **Pivot data model** shared with partner labs, converting heterogeneous instrument outputs
   into a single documented structure.
 - **Columnar export** (Apache Parquet) alongside SQLite pools, for large datasets and
@@ -33,3 +37,16 @@ pipeline (see [RAISE_alignment.md](RAISE_alignment.md)).
 - Connection to Materia Nova's PEO bench, electroplating and electroless lines, and to the
   SO-101 robotic sample-preparation cells.
 - Deployment recipe that does not depend on Windows services (container image).
+
+## Known issues
+
+- **Axis tick labels after rapid style edits**: when several figure settings change in quick
+  succession (e.g. typing a title), Plotly can fall back to its default axis range (−1…6) for
+  the tick labels while the curves stay correct. The labels come back as soon as the traces are
+  recomputed (any data change). To fix in `PlotView.tsx`.
+- **Axis unit suffix overlaps the axis title**: the *Unit* field adds a suffix to every tick
+  label, but the plot margin does not account for its width. Workaround: put the unit in the
+  axis title, e.g. `Internal stress (MPa)`.
+- **Statistics table inside the figure**: the two-level header is misaligned and the last row
+  can be clipped at the bottom of the figure. The statistics shown in the Extract tab are
+  correct.
